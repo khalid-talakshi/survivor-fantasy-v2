@@ -1,0 +1,48 @@
+name: Agent task
+description: A bounded implementation task suitable for one agent and one pull request.
+title: "[Area] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: Describe the user-visible or architectural result.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: In scope
+      description: List concrete deliverables and boundaries.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Link blocking issues, or write None.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Use verifiable checkboxes.
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: Required tests
+      description: Name the unit, integration, concurrency, or browser coverage expected.
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: Design references
+      description: Link relevant headings in docs/design/survivor-fantasy.md.
+    validations:
+      required: true
+
