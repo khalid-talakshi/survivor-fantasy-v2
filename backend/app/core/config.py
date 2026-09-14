@@ -16,6 +16,10 @@ class Settings(BaseSettings):
         )
     )
     frontend_dist: str = "frontend/dist"
+    supabase_jwks_url: str = "https://YOUR_PROJECT.supabase.co/auth/v1/.well-known/jwks.json"
+    supabase_jwt_issuer: str = "https://YOUR_PROJECT.supabase.co/auth/v1"
+    supabase_jwt_audience: str = "authenticated"
+    supabase_jwks_cache_seconds: int = 600
 
 
 @lru_cache
