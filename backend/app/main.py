@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import OperationalError
 
 from backend.app.api.health import router as health_router
+from backend.app.api.identity import router as identity_router
 from backend.app.core.config import get_settings
 from backend.app.core.context import current_request_id, reset_request_id, set_request_id
 from backend.app.core.errors import DatabaseUnavailableError, DomainError, ValidationError
@@ -107,6 +108,7 @@ def create_app() -> FastAPI:
         return _error_response(request, "internal_error", "An unexpected error occurred.", 500)
 
     application.include_router(health_router)
+    application.include_router(identity_router)
 
     frontend_dist = Path(settings.frontend_dist)
     assets_dir = frontend_dist / "assets"
