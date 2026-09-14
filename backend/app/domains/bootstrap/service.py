@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from backend.app.db.audit import AuditWriter
 from backend.app.db.transactions import domain_transaction
 from backend.app.domains.identity.service import normalize_email
 
@@ -102,9 +104,7 @@ class SystemOwnerProvisioner:
     """Ensure the singleton application-owned global role belongs to the account."""
 
     def ensure(self, db: Session, account_id: UUID) -> None:
-        role = db.execute(
-            text("SELECT account_id FROM app.system_role FOR UPDATE")
-        ).mappings().one_or_none()
+        role = db.execute(text("SELECT account_id FROM app.system_role")).mappings().one_or_none()
         if role is None:
             db.execute(
                 text(
@@ -191,10 +191,37 @@ class CommissionerMembershipProvisioner:
 
         membership = rows[0]
         if membership["deleted_at"] is not None or not membership["is_commissioner"]:
-            raise BootstrapConflictError(
-                "matching membership is not an active commissioner membership"
+            membership_id = db.execute(
+                text(
+                    """
+                    UPDATE app.league_membership
+                    SET deleted_at = NULL, is_commissioner = true, version = version + 1
+                    WHERE id = :membership_id
+                    RETURNING id
+                    """
+                ),
+                {"membership_id": membership["id"]},
+            ).scalar_one()
+            AuditWriter(db).write(
+                actor_account_id=account_id,
+                league_id=league_id,
+                event_type="league_membership.commissioner_recovered",
+                entity_type="league_membership",
+                entity_id=membership_id,
+                before_state={
+                    "deleted_at": _timestamp_value(membership["deleted_at"]),
+                    "is_commissioner": membership["is_commissioner"],
+                },
+                after_state={"deleted_at": None, "is_commissioner": True},
             )
+            return membership_id
         return membership["id"]
+
+
+def _timestamp_value(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat()
 
 
 class BootstrapService:
