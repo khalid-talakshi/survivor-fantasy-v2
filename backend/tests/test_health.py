@@ -1,5 +1,6 @@
 from collections.abc import Iterator
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.db.session import get_db
@@ -35,10 +36,12 @@ def test_readiness_probe() -> None:
     assert response.json() == {"status": "ready"}
 
 
-def test_unknown_api_route_never_falls_through_to_spa() -> None:
+@pytest.mark.parametrize("method", ["get", "post", "put", "patch", "delete", "options"])
+def test_unknown_api_route_never_falls_through_to_spa(method: str) -> None:
     client = TestClient(create_app())
 
-    response = client.get("/api/v1/does-not-exist")
+    response = getattr(client, method)("/api/v1/does-not-exist")
 
     assert response.status_code == 404
     assert response.headers["content-type"].startswith("application/json")
+    assert response.json()["error"]["code"] == "not_found"

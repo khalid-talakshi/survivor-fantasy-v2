@@ -31,6 +31,16 @@ EXPECTED_TABLES = {
     "wager_set",
 }
 
+VERSIONED_TABLES = {
+    "betting_config",
+    "bucket",
+    "castaway",
+    "league",
+    "league_membership",
+    "scoring_action",
+    "scoring_event",
+}
+
 EXPECTED_COLUMNS = {
     "account": {"id", "supabase_user_id", "email", "display_name", "deleted_at"},
     "audit_event": {
@@ -52,6 +62,7 @@ EXPECTED_COLUMNS = {
         "castaway_cap",
         "late_entry_budget",
         "enabled",
+        "version",
     },
     "betting_participation": {
         "id",
@@ -63,7 +74,7 @@ EXPECTED_COLUMNS = {
         "submitted_at",
         "deleted_at",
     },
-    "bucket": {"id", "league_id", "name", "display_order", "deleted_at"},
+    "bucket": {"id", "league_id", "name", "display_order", "deleted_at", "version"},
     "castaway": {
         "id",
         "league_id",
@@ -80,8 +91,9 @@ EXPECTED_COLUMNS = {
         "status",
         "placement",
         "deleted_at",
+        "version",
     },
-    "league": {"id", "name", "season_name", "state", "roster_locked", "deleted_at"},
+    "league": {"id", "name", "season_name", "state", "roster_locked", "deleted_at", "version"},
     "league_membership": {
         "id",
         "account_id",
@@ -90,6 +102,7 @@ EXPECTED_COLUMNS = {
         "participation_state",
         "activated_at",
         "deleted_at",
+        "version",
     },
     "notification_dispatch": {
         "id",
@@ -120,6 +133,7 @@ EXPECTED_COLUMNS = {
         "points",
         "deletion_batch_id",
         "deleted_at",
+        "version",
     },
     "scoring_event": {
         "id",
@@ -130,6 +144,7 @@ EXPECTED_COLUMNS = {
         "note",
         "deletion_batch_id",
         "deleted_at",
+        "version",
     },
     "system_role": {"account_id", "is_system_owner"},
     "wager": {"id", "league_id", "participation_id", "castaway_id", "amount", "deleted_at"},
@@ -173,20 +188,27 @@ EXPECTED_CHECK_CONSTRAINTS = {
     "ck_betting_config_castaway_cap",
     "ck_betting_config_late_entry_budget",
     "ck_betting_config_player_budget",
+    "ck_betting_config_version_positive",
     "ck_betting_participation_budget_nonnegative",
     "ck_bucket_display_order_nonnegative",
     "ck_bucket_name_not_blank",
+    "ck_bucket_version_positive",
     "ck_castaway_age_positive",
     "ck_castaway_name_not_blank",
     "ck_castaway_placement_positive",
+    "ck_castaway_version_positive",
     "ck_league_name_not_blank",
     "ck_league_season_name_not_blank",
+    "ck_league_version_positive",
     "ck_membership_active_has_activation",
+    "ck_league_membership_version_positive",
     "ck_notification_deduplication_key_not_blank",
     "ck_notification_retry_count_nonnegative",
     "ck_scoring_action_half_point",
     "ck_scoring_action_name_not_blank",
+    "ck_scoring_action_version_positive",
     "ck_scoring_event_episode_positive",
+    "ck_scoring_event_version_positive",
     "ck_system_role_owner_true",
     "ck_wager_amount_nonnegative",
     "ck_wager_set_finalized_is_locked",
@@ -266,7 +288,7 @@ def test_upgrade_and_downgrade_from_empty_database(empty_database: URL) -> None:
     with psycopg.connect(_psycopg_url(empty_database)) as connection:
         assert connection.execute("SELECT to_regnamespace('app')").fetchone() == ("app",)
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "20260913_0001",
+            "20260914_0002",
         )
 
     command.downgrade(config, "base")
@@ -296,7 +318,7 @@ def test_alembic_falls_back_to_database_url(
 
     with psycopg.connect(_psycopg_url(empty_database)) as connection:
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "20260913_0001",
+            "20260914_0002",
         )
 
 
@@ -337,6 +359,21 @@ def test_private_schema_contains_every_designed_table_and_enum(
         table_name: {column for table, column in column_rows if table == table_name}
         for table_name in EXPECTED_TABLES
     } == EXPECTED_COLUMNS
+
+
+def test_versioned_tables_default_to_one(
+    migrated_database: psycopg.Connection[tuple[object, ...]],
+) -> None:
+    rows = migrated_database.execute(
+        """
+        SELECT table_name, column_default
+        FROM information_schema.columns
+        WHERE table_schema = 'app' AND column_name = 'version'
+        """
+    ).fetchall()
+
+    assert {table_name for table_name, _ in rows} == VERSIONED_TABLES
+    assert {default for _, default in rows} == {"1"}
 
 
 def test_schema_has_required_indexes_types_and_least_privilege_grants(

@@ -66,8 +66,14 @@ def test_session_missing_malformed_and_invalid_credentials_have_safe_401() -> No
     ]
 
     assert [response.status_code for response in responses] == [401, 401, 401, 401, 401]
-    assert {str(response.json()) for response in responses} == {
-        "{'detail': {'code': 'unauthorized', 'message': 'Unauthorized.'}}"
+    assert {response.json()["error"]["code"] for response in responses} == {"unauthenticated"}
+    assert {response.json()["error"]["details"] == {} for response in responses} == {True}
+    request_ids_match = {
+        response.json()["request_id"] == response.headers["X-Request-ID"]
+        for response in responses
+    }
+    assert request_ids_match == {
+        True
     }
     assert {response.headers["www-authenticate"] for response in responses} == {"Bearer"}
 
