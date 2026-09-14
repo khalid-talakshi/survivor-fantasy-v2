@@ -1,4 +1,4 @@
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -17,19 +17,26 @@ from backend.app.core.errors import DatabaseUnavailableError, DomainError, Valid
 
 
 def _error_response(
-    request: Request, code: str, message: str, status_code: int, details: object = None
+    request: Request,
+    code: str,
+    message: str,
+    status_code: int,
+    details: object = None,
+    headers: Mapping[str, str] | None = None,
 ) -> JSONResponse:
     request_identifier = getattr(request.state, "request_id", None)
     if request_identifier is None:
         request_identifier = current_request_id()
     request_identifier = str(request_identifier)
+    response_headers = dict(headers or {})
+    response_headers["X-Request-ID"] = request_identifier
     return JSONResponse(
         status_code=status_code,
         content={
             "error": {"code": code, "message": message, "details": details or {}},
             "request_id": request_identifier,
         },
-        headers={"X-Request-ID": request_identifier},
+        headers=response_headers,
     )
 
 
@@ -91,7 +98,11 @@ def create_app() -> FastAPI:
     async def http_error_handler(request: Request, exc: HTTPException) -> JSONResponse:
         code = _default_http_error_code(exc.status_code)
         return _error_response(
-            request, code, "The request could not be completed.", exc.status_code
+            request,
+            code,
+            "The request could not be completed.",
+            exc.status_code,
+            headers=exc.headers,
         )
 
     @application.exception_handler(OperationalError)
