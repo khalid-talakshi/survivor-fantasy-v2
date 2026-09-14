@@ -10,7 +10,10 @@ class Settings(BaseSettings):
     app_name: str = "Survivor Fantasy"
     environment: str = "development"
     database_url: str = Field(
-        default="postgresql+psycopg://postgres:postgres@localhost:5432/survivor_fantasy"
+        default=(
+            "postgresql+psycopg://survivor_fantasy_runtime:runtime@localhost:5432/"
+            "survivor_fantasy"
+        )
     )
     frontend_dist: str = "frontend/dist"
 
@@ -18,4 +21,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-
