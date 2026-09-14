@@ -3,6 +3,8 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi import APIRouter, HTTPException
 from fastapi.testclient import TestClient
+from pydantic import BaseModel, field_validator
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
 from backend.app.core.context import current_request_id, current_transaction_id
 from backend.app.core.errors import (
@@ -128,21 +130,66 @@ def test_validation_and_unexpected_errors_are_sanitized() -> None:
     def unexpected() -> None:
         raise RuntimeError("private implementation detail")
 
+    class ValidatorInput(BaseModel):
+        value: int
+
+        @field_validator("value")
+        @classmethod
+        def reject_value(cls, value: int) -> int:
+            raise ValueError(f"{value} is not accepted")
+
+    @router.post("/api/v1/validator")
+    def validator(_: ValidatorInput) -> None:
+        return None
+
     app.include_router(router)
     app.router.routes.insert(0, app.router.routes.pop())
     client = TestClient(app, raise_server_exceptions=False)
 
     validation_response = client.get("/api/v1/typed?value=not-a-number")
-    unexpected_response = client.get("/api/v1/unexpected")
+    validator_response = client.post("/api/v1/validator", json={"value": 1})
+    supplied_request_id = "11111111-1111-1111-1111-111111111111"
+    unexpected_response = client.get(
+        "/api/v1/unexpected", headers={"X-Request-ID": supplied_request_id}
+    )
 
     assert validation_response.status_code == 422
     assert validation_response.json()["error"]["code"] == "validation_error"
+    assert validator_response.status_code == 422
+    assert validator_response.json()["error"]["code"] == "validation_error"
     assert unexpected_response.status_code == 500
+    assert unexpected_response.json()["request_id"] == supplied_request_id
+    assert unexpected_response.headers["X-Request-ID"] == supplied_request_id
     assert unexpected_response.json()["error"] == {
         "code": "internal_error",
         "message": "An unexpected error occurred.",
         "details": {},
     }
+
+
+def test_only_operational_database_errors_map_to_database_unavailable() -> None:
+    app = create_app()
+    router = APIRouter()
+
+    @router.get("/api/v1/operational-error")
+    def operational_error() -> None:
+        raise OperationalError("SELECT 1", {}, RuntimeError("connection failed"))
+
+    @router.get("/api/v1/sql-error")
+    def sql_error() -> None:
+        raise SQLAlchemyError("invalid SQL")
+
+    app.include_router(router)
+    app.router.routes.insert(0, app.router.routes.pop())
+    client = TestClient(app, raise_server_exceptions=False)
+
+    operational_response = client.get("/api/v1/operational-error")
+    sql_response = client.get("/api/v1/sql-error")
+
+    assert operational_response.status_code == 503
+    assert operational_response.json()["error"]["code"] == "database_unavailable"
+    assert sql_response.status_code == 500
+    assert sql_response.json()["error"]["code"] == "internal_error"
 
 
 class FakeTransaction:

@@ -18,7 +18,7 @@ def _table(session: Session, name: str) -> Table:
 
 @pytest.fixture
 def session(empty_database: URL) -> Session:
-    engine = create_engine(empty_database)
+    engine = create_engine(empty_database.set(drivername="postgresql+psycopg"))
     with Session(engine) as database_session:
         yield database_session
     engine.dispose()
@@ -114,6 +114,45 @@ def test_domain_transaction_rolls_back_audit_and_domain_change(
         audit.entity_history(league_id=league_id, entity_type="bucket", entity_id=bucket_id)
         == []
     )
+
+
+def test_audit_history_is_bounded_and_cursor_paginated(
+    session: Session, league_data: tuple[UUID, UUID, UUID, UUID]
+) -> None:
+    actor_id, league_id, _, bucket_id = league_data
+    audit = AuditWriter(session)
+
+    with domain_transaction(session):
+        correlation_id = current_transaction_id()
+        for event_type in ("bucket.created", "bucket.updated", "bucket.deleted"):
+            audit.write(
+                actor_account_id=actor_id,
+                league_id=league_id,
+                event_type=event_type,
+                entity_type="bucket",
+                entity_id=bucket_id,
+            )
+
+    first_page = audit.entity_history(
+        league_id=league_id, entity_type="bucket", entity_id=bucket_id, limit=2
+    )
+    cursor = (first_page[-1]["occurred_at"], first_page[-1]["id"])
+    second_page = audit.entity_history(
+        league_id=league_id,
+        entity_type="bucket",
+        entity_id=bucket_id,
+        limit=2,
+        before=cursor,
+    )
+
+    assert len(first_page) == 2
+    assert len(second_page) == 1
+    assert {row["id"] for row in first_page}.isdisjoint(row["id"] for row in second_page)
+    assert len(audit.by_correlation_id(league_id=league_id, correlation_id=correlation_id)) == 3
+    with pytest.raises(ValueError, match="limit"):
+        audit.entity_history(
+            league_id=league_id, entity_type="bucket", entity_id=bucket_id, limit=101
+        )
 
 
 def test_league_repository_enforces_scope_and_optimistic_version(

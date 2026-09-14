@@ -3,10 +3,11 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import OperationalError
 
 from backend.app.api.health import router as health_router
 from backend.app.core.config import get_settings
@@ -15,9 +16,12 @@ from backend.app.core.errors import DatabaseUnavailableError, DomainError, Valid
 
 
 def _error_response(
-    code: str, message: str, status_code: int, details: object = None
+    request: Request, code: str, message: str, status_code: int, details: object = None
 ) -> JSONResponse:
-    request_identifier = str(current_request_id())
+    request_identifier = getattr(request.state, "request_id", None)
+    if request_identifier is None:
+        request_identifier = current_request_id()
+    request_identifier = str(request_identifier)
     return JSONResponse(
         status_code=status_code,
         content={
@@ -56,7 +60,9 @@ def create_app() -> FastAPI:
     async def request_context(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        token = set_request_id(_request_id(request.headers.get("X-Request-ID")))
+        request_identifier = _request_id(request.headers.get("X-Request-ID"))
+        request.state.request_id = request_identifier
+        token = set_request_id(request_identifier)
         try:
             response = await call_next(request)
             response.headers["X-Request-ID"] = str(current_request_id())
@@ -65,34 +71,40 @@ def create_app() -> FastAPI:
             reset_request_id(token)
 
     @application.exception_handler(DomainError)
-    async def domain_error_handler(_: Request, exc: DomainError) -> JSONResponse:
-        return _error_response(exc.code, exc.message, exc.status_code, exc.details)
+    async def domain_error_handler(request: Request, exc: DomainError) -> JSONResponse:
+        return _error_response(request, exc.code, exc.message, exc.status_code, exc.details)
 
     @application.exception_handler(RequestValidationError)
-    async def validation_error_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
+    async def validation_error_handler(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
         return _error_response(
+            request,
             ValidationError.code,
             ValidationError.default_message,
             ValidationError.status_code,
-            {"errors": exc.errors()},
+            {"errors": jsonable_encoder(exc.errors())},
         )
 
     @application.exception_handler(HTTPException)
-    async def http_error_handler(_: Request, exc: HTTPException) -> JSONResponse:
+    async def http_error_handler(request: Request, exc: HTTPException) -> JSONResponse:
         code = _default_http_error_code(exc.status_code)
-        return _error_response(code, "The request could not be completed.", exc.status_code)
-
-    @application.exception_handler(SQLAlchemyError)
-    async def database_error_handler(_: Request, __: SQLAlchemyError) -> JSONResponse:
         return _error_response(
+            request, code, "The request could not be completed.", exc.status_code
+        )
+
+    @application.exception_handler(OperationalError)
+    async def database_error_handler(request: Request, _: OperationalError) -> JSONResponse:
+        return _error_response(
+            request,
             DatabaseUnavailableError.code,
             DatabaseUnavailableError.default_message,
             DatabaseUnavailableError.status_code,
         )
 
     @application.exception_handler(Exception)
-    async def unexpected_error_handler(_: Request, __: Exception) -> JSONResponse:
-        return _error_response("internal_error", "An unexpected error occurred.", 500)
+    async def unexpected_error_handler(request: Request, _: Exception) -> JSONResponse:
+        return _error_response(request, "internal_error", "An unexpected error occurred.", 500)
 
     application.include_router(health_router)
 

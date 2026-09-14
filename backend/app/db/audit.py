@@ -1,10 +1,11 @@
 """Append-only audit writes that participate in the caller's transaction."""
 
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Column, DateTime, MetaData, Table, Text, insert, select
+from sqlalchemy import Column, DateTime, MetaData, Table, Text, and_, insert, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.engine import RowMapping
@@ -28,6 +29,26 @@ AUDIT_EVENT = Table(
     Column("occurred_at", DateTime(timezone=True)),
     schema="app",
 )
+
+AuditCursor = tuple[datetime, UUID]
+DEFAULT_PAGE_SIZE = 50
+MAX_PAGE_SIZE = 100
+
+
+def _page_size(limit: int) -> int:
+    if not 1 <= limit <= MAX_PAGE_SIZE:
+        raise ValueError(f"limit must be between 1 and {MAX_PAGE_SIZE}")
+    return limit
+
+
+def _before_cursor(cursor: AuditCursor | None):
+    if cursor is None:
+        return None
+    occurred_at, event_id = cursor
+    return or_(
+        AUDIT_EVENT.c.occurred_at < occurred_at,
+        and_(AUDIT_EVENT.c.occurred_at == occurred_at, AUDIT_EVENT.c.id < event_id),
+    )
 
 
 class AuditWriter:
@@ -64,26 +85,45 @@ class AuditWriter:
         return row
 
     def entity_history(
-        self, *, league_id: UUID, entity_type: str, entity_id: UUID
+        self,
+        *,
+        league_id: UUID,
+        entity_type: str,
+        entity_id: UUID,
+        limit: int = DEFAULT_PAGE_SIZE,
+        before: AuditCursor | None = None,
     ) -> Sequence[RowMapping]:
+        statement = select(AUDIT_EVENT).where(
+            AUDIT_EVENT.c.league_id == league_id,
+            AUDIT_EVENT.c.entity_type == entity_type,
+            AUDIT_EVENT.c.entity_id == entity_id,
+        )
+        cursor_predicate = _before_cursor(before)
+        if cursor_predicate is not None:
+            statement = statement.where(cursor_predicate)
         return self.session.execute(
-            select(AUDIT_EVENT)
-            .where(
-                AUDIT_EVENT.c.league_id == league_id,
-                AUDIT_EVENT.c.entity_type == entity_type,
-                AUDIT_EVENT.c.entity_id == entity_id,
-            )
-            .order_by(AUDIT_EVENT.c.occurred_at, AUDIT_EVENT.c.id)
+            statement
+            .order_by(AUDIT_EVENT.c.occurred_at.desc(), AUDIT_EVENT.c.id.desc())
+            .limit(_page_size(limit))
         ).mappings().all()
 
     def by_correlation_id(
-        self, *, league_id: UUID, correlation_id: UUID
+        self,
+        *,
+        league_id: UUID,
+        correlation_id: UUID,
+        limit: int = DEFAULT_PAGE_SIZE,
+        before: AuditCursor | None = None,
     ) -> Sequence[RowMapping]:
+        statement = select(AUDIT_EVENT).where(
+            AUDIT_EVENT.c.league_id == league_id,
+            AUDIT_EVENT.c.correlation_id == correlation_id,
+        )
+        cursor_predicate = _before_cursor(before)
+        if cursor_predicate is not None:
+            statement = statement.where(cursor_predicate)
         return self.session.execute(
-            select(AUDIT_EVENT)
-            .where(
-                AUDIT_EVENT.c.league_id == league_id,
-                AUDIT_EVENT.c.correlation_id == correlation_id,
-            )
-            .order_by(AUDIT_EVENT.c.occurred_at, AUDIT_EVENT.c.id)
+            statement
+            .order_by(AUDIT_EVENT.c.occurred_at.desc(), AUDIT_EVENT.c.id.desc())
+            .limit(_page_size(limit))
         ).mappings().all()
