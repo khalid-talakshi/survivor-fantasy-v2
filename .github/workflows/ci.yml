@@ -18,7 +18,7 @@ jobs:
           python-version-file: .python-version
       - run: uv sync --locked --all-groups
       - run: uv run ruff check .
-      - run: uv run mypy backend
+      - run: uv run ty check backend
       - run: uv run pytest
 
   frontend:

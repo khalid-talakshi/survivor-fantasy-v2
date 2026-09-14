@@ -37,7 +37,7 @@ The Vite development server proxies `/api` and `/health` to FastAPI. Production 
 
 ```bash
 uv run ruff check .
-uv run mypy backend
+uv run ty check backend
 uv run pytest
 npm run lint --prefix frontend
 npm run typecheck --prefix frontend
@@ -48,4 +48,3 @@ npm run build --prefix frontend
 ## Delivery workflow
 
 GitHub issues are intentionally sized for autonomous agents. Pick an unblocked issue, create a dedicated branch, meet the issue acceptance criteria, and open a focused pull request. See [AGENTS.md](AGENTS.md) for the working agreement.
-
