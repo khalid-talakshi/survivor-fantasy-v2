@@ -22,10 +22,10 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-  "mypy>=1.17,<2",
   "pytest>=8.4,<9",
   "pytest-cov>=6.2,<7",
   "ruff>=0.12,<1",
+  "ty>=0.0.80,<0.1",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -42,8 +42,8 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
-[tool.mypy]
-python_version = "3.12"
-strict = true
-packages = ["backend"]
+[tool.ty.src]
+exclude = ["backend/tests/**"]
 
+[tool.ty.environment]
+python-version = "3.12"

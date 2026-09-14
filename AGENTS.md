@@ -26,9 +26,8 @@
 
 - Acceptance criteria in the issue are covered by automated tests at the lowest useful layer.
 - Cross-league and role-denial paths are tested for protected domain work.
-- Backend changes pass `uv run ruff check .`, `uv run mypy backend`, and `uv run pytest`.
+- Backend changes pass `uv run ruff check .`, `uv run ty check backend`, and `uv run pytest`.
 - Frontend changes pass `npm run lint`, `npm run typecheck`, `npm run test -- --run`, and `npm run build` from `frontend/`.
 - API contract changes regenerate the checked-in TypeScript API types.
 - User-facing behavior is responsive, keyboard accessible, and has explicit loading, empty, error, and success states.
 - The pull request links the issue with `Closes #<number>` and documents verification performed.
-
