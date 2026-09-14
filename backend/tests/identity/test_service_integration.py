@@ -85,7 +85,7 @@ def test_session_projection_uses_only_active_authorized_records(
     migrated_database: psycopg.Connection[tuple[object, ...]], runtime_database_url: URL
 ) -> None:
     account_id, subject = _insert_projection_data(migrated_database)
-    engine = create_engine(runtime_database_url)
+    engine = create_engine(runtime_database_url.set(drivername="postgresql+psycopg"))
     try:
         with Session(engine) as session:
             result = IdentityService().resolve_session(
