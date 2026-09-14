@@ -42,5 +42,8 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+[tool.ty.src]
+exclude = ["backend/tests/**"]
+
 [tool.ty.environment]
 python-version = "3.12"
