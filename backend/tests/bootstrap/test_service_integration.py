@@ -61,7 +61,7 @@ def test_bootstrap_creates_initial_owner_league_and_pending_commissioner_members
         (result.account_id,),
     ).fetchone()
     role = migrated_database.execute(
-        "SELECT account_id FROM app.system_role"
+        "SELECT account_id, initial_league_id FROM app.system_role"
     ).fetchone()
     league = migrated_database.execute(
         "SELECT name, season_name, state FROM app.league WHERE id = %s", (result.league_id,)
@@ -75,7 +75,7 @@ def test_bootstrap_creates_initial_owner_league_and_pending_commissioner_members
     ).fetchone()
 
     assert account == (request.supabase_user_id, "owner@example.com", "Owner")
-    assert role == (result.account_id,)
+    assert role == (result.account_id, result.league_id)
     assert league == ("Survivor Pool", "Season 49", "active")
     assert membership == (result.account_id, result.league_id, True, "pending_roster")
 
@@ -86,8 +86,11 @@ def test_bootstrap_first_run_works_with_restricted_runtime_role(
     result = _provision(runtime_database_url, _request())
 
     assert migrated_database.execute("SELECT count(*) FROM app.account").fetchone() == (1,)
-    assert migrated_database.execute("SELECT account_id FROM app.system_role").fetchone() == (
+    assert migrated_database.execute(
+        "SELECT account_id, initial_league_id FROM app.system_role"
+    ).fetchone() == (
         result.account_id,
+        result.league_id,
     )
     assert migrated_database.execute("SELECT id FROM app.league").fetchone() == (result.league_id,)
     assert migrated_database.execute(
@@ -123,6 +126,41 @@ def test_bootstrap_is_idempotent_and_recovers_missing_role_league_and_membership
     )
 
 
+def test_bootstrap_rejects_second_existing_league_for_same_owner(
+    migrated_database: psycopg.Connection[tuple[object, ...]], empty_database: URL
+) -> None:
+    request = _request()
+    initial = _provision(empty_database, request)
+    second_league_id = uuid4()
+    migrated_database.execute(
+        "INSERT INTO app.league (id, name, season_name) VALUES (%s, %s, %s)",
+        (second_league_id, "Different League", "Season 50"),
+    )
+    migrated_database.commit()
+    second_league = BootstrapRequest(
+        supabase_user_id=request.supabase_user_id,
+        email=request.email,
+        display_name=request.display_name,
+        league_name="Different League",
+        season_name="Season 50",
+    )
+
+    with pytest.raises(BootstrapConflictError, match="initial league does not match"):
+        _provision(empty_database, second_league)
+
+    assert migrated_database.execute("SELECT count(*) FROM app.account").fetchone() == (1,)
+    assert migrated_database.execute(
+        "SELECT account_id, initial_league_id FROM app.system_role"
+    ).fetchone() == (initial.account_id, initial.league_id)
+    assert migrated_database.execute("SELECT count(*) FROM app.league").fetchone() == (2,)
+    assert migrated_database.execute(
+        "SELECT count(*) FROM app.league_membership WHERE league_id = %s", (second_league_id,)
+    ).fetchone() == (0,)
+    assert migrated_database.execute(
+        "SELECT id FROM app.league_membership"
+    ).fetchone() == (initial.membership_id,)
+
+
 def test_bootstrap_recovers_membership_when_matching_owner_and_league_exist(
     migrated_database: psycopg.Connection[tuple[object, ...]], empty_database: URL
 ) -> None:
@@ -136,15 +174,18 @@ def test_bootstrap_recovers_membership_when_matching_owner_and_league_exist(
         (account_id, request.supabase_user_id, "owner@example.com", request.display_name),
     )
     migrated_database.execute(
-        "INSERT INTO app.system_role (account_id, is_system_owner) VALUES (%s, true)",
-        (account_id,),
-    )
-    migrated_database.execute(
         """
         INSERT INTO app.league (id, name, season_name)
         VALUES (%s, %s, %s)
         """,
         (league_id, request.league_name, request.season_name),
+    )
+    migrated_database.execute(
+        """
+        INSERT INTO app.system_role (account_id, is_system_owner, initial_league_id)
+        VALUES (%s, true, %s)
+        """,
+        (account_id, league_id),
     )
     migrated_database.commit()
 

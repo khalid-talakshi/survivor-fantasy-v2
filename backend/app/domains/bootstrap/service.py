@@ -103,24 +103,61 @@ class AccountProvisioner:
 class SystemOwnerProvisioner:
     """Ensure the singleton application-owned global role belongs to the account."""
 
-    def ensure(self, db: Session, account_id: UUID) -> None:
-        role = db.execute(text("SELECT account_id FROM app.system_role")).mappings().one_or_none()
+    def initial_league_id(self, db: Session, account_id: UUID) -> UUID | None:
+        role = db.execute(
+            text("SELECT account_id, initial_league_id FROM app.system_role")
+        ).mappings().one_or_none()
         if role is None:
-            db.execute(
-                text(
-                    "INSERT INTO app.system_role (account_id, is_system_owner) "
-                    "VALUES (:account_id, true)"
-                ),
-                {"account_id": account_id},
-            )
-        elif role["account_id"] != account_id:
+            return None
+        if role["account_id"] != account_id:
             raise BootstrapConflictError("a different account is already the system owner")
+        if role["initial_league_id"] is None:
+            raise BootstrapConflictError("existing system owner has no initial league association")
+        return role["initial_league_id"]
+
+    def create(self, db: Session, account_id: UUID, league_id: UUID) -> None:
+        db.execute(
+            text(
+                """
+                INSERT INTO app.system_role (account_id, is_system_owner, initial_league_id)
+                VALUES (:account_id, true, :initial_league_id)
+                """
+            ),
+            {"account_id": account_id, "initial_league_id": league_id},
+        )
 
 
 class LeagueProvisioner:
     """Create or verify the configured active initial league."""
 
-    def ensure(self, db: Session, request: BootstrapRequest) -> UUID:
+    def ensure(
+        self, db: Session, initial_league_id: UUID | None, request: BootstrapRequest
+    ) -> UUID:
+        if initial_league_id is not None:
+            league = db.execute(
+                text(
+                    """
+                    SELECT id, name, season_name, state, deleted_at
+                    FROM app.league
+                    WHERE id = :league_id
+                    FOR UPDATE
+                    """
+                ),
+                {"league_id": initial_league_id},
+            ).mappings().one_or_none()
+            if league is None:
+                raise BootstrapConflictError("system owner initial league no longer exists")
+            if league["deleted_at"] is not None or league["state"] != "active":
+                raise BootstrapConflictError("matching initial league is not active")
+            if (
+                league["name"] != request.league_name
+                or league["season_name"] != request.season_name
+            ):
+                raise BootstrapConflictError(
+                    "initial league does not match bootstrap league values"
+                )
+            return league["id"]
+
         rows = db.execute(
             text(
                 """
@@ -241,8 +278,10 @@ class BootstrapService:
                 {"lock_key": BOOTSTRAP_ADVISORY_LOCK_KEY},
             )
             account_id = self.accounts.ensure(db, request)
-            self.system_owners.ensure(db, account_id)
-            league_id = self.leagues.ensure(db, request)
+            initial_league_id = self.system_owners.initial_league_id(db, account_id)
+            league_id = self.leagues.ensure(db, initial_league_id, request)
+            if initial_league_id is None:
+                self.system_owners.create(db, account_id, league_id)
             membership_id = self.memberships.ensure(db, account_id, league_id)
         return BootstrapResult(
             account_id=account_id,
