@@ -45,15 +45,18 @@ class SupabaseTokenVerifier:
         audience: str,
         jwks_fetcher: JwksFetcher,
         cache_seconds: int = 600,
+        forced_refresh_cooldown_seconds: int = 30,
         clock: Callable[[], float] = monotonic,
     ) -> None:
         self.issuer = issuer
         self.audience = audience
         self.jwks_fetcher = jwks_fetcher
         self.cache_seconds = cache_seconds
+        self.forced_refresh_cooldown_seconds = forced_refresh_cooldown_seconds
         self.clock = clock
         self._keys: dict[str, jwt.PyJWK] = {}
         self._expires_at = 0.0
+        self._next_forced_refresh_at: float | None = None
         self._lock = Lock()
 
     def verify(self, token: str) -> VerifiedIdentity:
@@ -82,12 +85,19 @@ class SupabaseTokenVerifier:
 
     def _get_key(self, kid: str, algorithm: str) -> jwt.PyJWK:
         with self._lock:
-            if self.clock() >= self._expires_at:
+            now = self.clock()
+            refreshed_expired_cache = now >= self._expires_at
+            if refreshed_expired_cache:
                 self._refresh()
             key = self._keys.get(kid)
-            if key is None:
+            if (
+                key is None
+                and not refreshed_expired_cache
+                and (self._next_forced_refresh_at is None or now >= self._next_forced_refresh_at)
+            ):
                 # A fresh document may contain a just-rotated signing key.
                 self._refresh()
+                self._next_forced_refresh_at = now + self.forced_refresh_cooldown_seconds
                 key = self._keys.get(kid)
             if key is None:
                 raise AuthenticationError

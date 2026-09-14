@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
@@ -85,9 +86,12 @@ def test_rejects_tampered_and_forbidden_algorithms() -> None:
     )
     valid = token(private_key, "RS256", "primary")
     header, payload, signature = valid.split(".")
+    signature_bytes = bytearray(urlsafe_b64decode(signature + "=" * (-len(signature) % 4)))
+    signature_bytes[0] ^= 1
+    tampered_signature = urlsafe_b64encode(signature_bytes).rstrip(b"=").decode()
 
     with pytest.raises(AuthenticationError):
-        verifier.verify(".".join((header, payload, signature[:-1] + "A")))
+        verifier.verify(".".join((header, payload, tampered_signature)))
     with pytest.raises(AuthenticationError):
         verifier.verify(jwt.encode({"sub": str(uuid4())}, "x" * 32, algorithm="HS256"))
 
@@ -132,6 +136,38 @@ def test_cache_reuses_keys_and_refreshes_for_rotated_kid() -> None:
     verifier.verify(token(rotated, "RS256", "rotated"))
 
     assert calls == 2
+
+
+def test_unknown_kids_share_a_bounded_forced_refresh() -> None:
+    primary = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    unknown = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    now = 0.0
+    calls = 0
+
+    def fetch() -> dict[str, object]:
+        nonlocal calls
+        calls += 1
+        return {"keys": [jwk(primary, "RS256", "primary")]}
+
+    verifier = SupabaseTokenVerifier(
+        issuer=ISSUER,
+        audience=AUDIENCE,
+        jwks_fetcher=fetch,
+        cache_seconds=600,
+        forced_refresh_cooldown_seconds=30,
+        clock=lambda: now,
+    )
+
+    verifier.verify(token(primary, "RS256", "primary"))
+    for kid in ("unknown-one", "unknown-two"):
+        with pytest.raises(AuthenticationError):
+            verifier.verify(token(unknown, "RS256", kid))
+    assert calls == 2
+
+    now = 30.0
+    with pytest.raises(AuthenticationError):
+        verifier.verify(token(unknown, "RS256", "unknown-three"))
+    assert calls == 3
 
 
 def test_metadata_does_not_affect_verified_identity() -> None:

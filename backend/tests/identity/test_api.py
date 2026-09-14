@@ -7,7 +7,12 @@ from fastapi.testclient import TestClient
 from backend.app.api.identity import get_identity_service, get_token_verifier
 from backend.app.db.session import get_db
 from backend.app.domains.identity.auth import AuthenticationError, VerifiedIdentity
-from backend.app.domains.identity.service import CurrentAccount, IdentityService, SessionProjection
+from backend.app.domains.identity.service import (
+    CurrentAccount,
+    IdentityService,
+    LeagueSummary,
+    SessionProjection,
+)
 from backend.app.main import create_app
 
 
@@ -27,7 +32,18 @@ class Service(IdentityService):
         if identity.email in {"missing@example.com", "deleted@example.com"}:
             raise AuthenticationError
         return SessionProjection(
-            account=CurrentAccount(uuid4(), identity.email, "Player", False), leagues=[]
+            account=CurrentAccount(uuid4(), identity.email, "Player", False),
+            leagues=[
+                LeagueSummary(
+                    id=uuid4(),
+                    name="League",
+                    season_name="48",
+                    state="active",
+                    roster_locked=False,
+                    is_commissioner=True,
+                    participation_state="active",
+                )
+            ],
         )
 
 
@@ -62,3 +78,14 @@ def test_session_returns_only_navigation_projection() -> None:
     assert response.status_code == 200
     assert set(response.json()) == {"account", "leagues"}
     assert set(response.json()["account"]) == {"id", "email", "display_name", "is_system_owner"}
+    assert response.json()["leagues"] == [
+        {
+            "id": response.json()["leagues"][0]["id"],
+            "name": "League",
+            "season_name": "48",
+            "state": "active",
+            "roster_locked": False,
+            "is_commissioner": True,
+            "participation_state": "active",
+        }
+    ]

@@ -46,7 +46,7 @@ def get_identity_service() -> IdentityService:
 def current_identity(
     verifier: Annotated[SupabaseTokenVerifier, Depends(get_token_verifier)],
     authorization: Annotated[str | None, Header()] = None,
-):
+) -> VerifiedIdentity:
     if authorization is None:
         raise unauthorized()
     scheme, _, token = authorization.partition(" ")
@@ -98,6 +98,15 @@ def session(
             is_system_owner=projection.account.is_system_owner,
         ),
         leagues=[
-            LeagueResponse(id=str(league.id), **league.__dict__) for league in projection.leagues
+            LeagueResponse(
+                id=str(league.id),
+                name=league.name,
+                season_name=league.season_name,
+                state=league.state,
+                roster_locked=league.roster_locked,
+                is_commissioner=league.is_commissioner,
+                participation_state=league.participation_state,
+            )
+            for league in projection.leagues
         ],
     )
