@@ -5,6 +5,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from backend.app.api.health import router as health_router
+from backend.app.api.identity import router as identity_router
 from backend.app.core.config import get_settings
 
 
@@ -12,6 +13,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     application = FastAPI(title=settings.app_name, version="0.1.0")
     application.include_router(health_router)
+    application.include_router(identity_router)
 
     frontend_dist = Path(settings.frontend_dist)
     assets_dir = frontend_dist / "assets"
