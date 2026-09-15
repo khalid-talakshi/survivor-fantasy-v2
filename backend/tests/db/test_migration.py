@@ -28,6 +28,7 @@ EXPECTED_TABLES = {
     "scoring_action",
     "scoring_event",
     "system_role",
+    "system_owner_initial_league",
     "wager",
     "wager_set",
 }
@@ -147,7 +148,8 @@ EXPECTED_COLUMNS = {
         "deleted_at",
         "version",
     },
-    "system_role": {"account_id", "is_system_owner", "initial_league_id"},
+    "system_role": {"account_id", "is_system_owner"},
+    "system_owner_initial_league": {"account_id", "league_id"},
     "wager": {"id", "league_id", "participation_id", "castaway_id", "amount", "deleted_at"},
     "wager_set": {
         "id",
@@ -275,7 +277,8 @@ EXPECTED_FOREIGN_KEY_RELATIONSHIPS = {
     ("app.scoring_event", "app.castaway"),
     ("app.scoring_event", "app.scoring_action"),
     ("app.system_role", "app.account"),
-    ("app.system_role", "app.league"),
+    ("app.system_owner_initial_league", "app.system_role"),
+    ("app.system_owner_initial_league", "app.league"),
     ("app.wager", "app.betting_participation"),
     ("app.wager", "app.castaway"),
     ("app.wager_set", "app.betting_config"),
@@ -360,17 +363,9 @@ def test_initial_league_marker_migration_backfills_an_unambiguous_owner_membersh
 
     with psycopg.connect(_psycopg_url(empty_database)) as connection:
         assert connection.execute(
-            "SELECT initial_league_id FROM app.system_role WHERE account_id = %s", (account_id,)
+            "SELECT league_id FROM app.system_owner_initial_league WHERE account_id = %s",
+            (account_id,),
         ).fetchone() == (league_id,)
-        assert connection.execute(
-            """
-            SELECT is_nullable
-            FROM information_schema.columns
-            WHERE table_schema = 'app'
-              AND table_name = 'system_role'
-              AND column_name = 'initial_league_id'
-            """
-        ).fetchone() == ("NO",)
 
 
 def test_initial_league_marker_migration_rejects_ambiguous_owner_memberships(
@@ -415,7 +410,7 @@ def test_initial_league_marker_migration_rejects_ambiguous_owner_memberships(
         )
         connection.commit()
 
-    with pytest.raises(DBAPIError, match="exactly one initial league"):
+    with pytest.raises(DBAPIError, match="multiple initial leagues"):
         command.upgrade(config, "head")
 
 
@@ -463,8 +458,12 @@ def test_initial_league_marker_migration_rejects_ineligible_owner_membership(
         )
         connection.commit()
 
-    with pytest.raises(DBAPIError, match="exactly one initial league"):
-        command.upgrade(config, "head")
+    command.upgrade(config, "head")
+    with psycopg.connect(_psycopg_url(empty_database)) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM app.system_owner_initial_league WHERE account_id = %s",
+            (account_id,),
+        ).fetchone() == (0,)
 
 
 def test_private_schema_contains_every_designed_table_and_enum(
@@ -678,10 +677,12 @@ def test_schema_has_required_indexes_types_and_least_privilege_grants(
     assert runtime_grants == {
         **{
             table_name: ["INSERT", "SELECT", "UPDATE"]
-            for table_name in EXPECTED_TABLES - {"audit_event", "system_role"}
+            for table_name in EXPECTED_TABLES
+            - {"audit_event", "system_role", "system_owner_initial_league"}
         },
         "audit_event": ["INSERT", "SELECT"],
         "system_role": ["INSERT", "SELECT"],
+        "system_owner_initial_league": ["INSERT", "SELECT"],
     }
     assert runtime_role == (
         True,
@@ -917,10 +918,10 @@ def test_runtime_login_has_effective_least_privilege_access(
 
         runtime.execute(
             """
-            INSERT INTO app.system_role (account_id, is_system_owner, initial_league_id)
-            VALUES (%s, true, %s)
+            INSERT INTO app.system_role (account_id, is_system_owner)
+            VALUES (%s, true)
             """,
-            (values["account_one"], values["league_one"]),
+            (values["account_one"],),
         )
         runtime.commit()
         with pytest.raises(psycopg.errors.InsufficientPrivilege), runtime.transaction():

@@ -46,10 +46,10 @@ def _insert_projection_data(
         )
         cursor.execute(
             """
-            INSERT INTO app.system_role (account_id, is_system_owner, initial_league_id)
-            VALUES (%s, true, %s)
+            INSERT INTO app.system_role (account_id, is_system_owner)
+            VALUES (%s, true)
             """,
-            (account_id, active_zulu),
+            (account_id,),
         )
         cursor.execute(
             """

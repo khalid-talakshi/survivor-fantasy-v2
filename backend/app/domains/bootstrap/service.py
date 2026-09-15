@@ -105,25 +105,52 @@ class SystemOwnerProvisioner:
 
     def initial_league_id(self, db: Session, account_id: UUID) -> UUID | None:
         role = db.execute(
-            text("SELECT account_id, initial_league_id FROM app.system_role")
+            text(
+                """
+                SELECT account_id
+                FROM app.system_role
+                FOR UPDATE
+                """
+            )
         ).mappings().one_or_none()
         if role is None:
             return None
         if role["account_id"] != account_id:
             raise BootstrapConflictError("a different account is already the system owner")
-        if role["initial_league_id"] is None:
-            raise BootstrapConflictError("existing system owner has no initial league association")
-        return role["initial_league_id"]
+        marker = db.execute(
+            text(
+                """
+                SELECT league_id
+                FROM app.system_owner_initial_league
+                WHERE account_id = :account_id
+                FOR UPDATE
+                """
+            ),
+            {"account_id": account_id},
+        ).scalar_one_or_none()
+        return marker
 
     def create(self, db: Session, account_id: UUID, league_id: UUID) -> None:
         db.execute(
             text(
                 """
-                INSERT INTO app.system_role (account_id, is_system_owner, initial_league_id)
-                VALUES (:account_id, true, :initial_league_id)
+                INSERT INTO app.system_role (account_id, is_system_owner)
+                VALUES (:account_id, true)
                 """
             ),
-            {"account_id": account_id, "initial_league_id": league_id},
+            {"account_id": account_id},
+        )
+
+    def associate(self, db: Session, account_id: UUID, league_id: UUID) -> None:
+        db.execute(
+            text(
+                """
+                INSERT INTO app.system_owner_initial_league (account_id, league_id)
+                VALUES (:account_id, :league_id)
+                ON CONFLICT (account_id) DO NOTHING
+                """
+            ),
+            {"account_id": account_id, "league_id": league_id},
         )
 
 
@@ -281,7 +308,14 @@ class BootstrapService:
             initial_league_id = self.system_owners.initial_league_id(db, account_id)
             league_id = self.leagues.ensure(db, initial_league_id, request)
             if initial_league_id is None:
-                self.system_owners.create(db, account_id, league_id)
+                role = db.execute(
+                    text("SELECT account_id FROM app.system_role")
+                ).scalar_one_or_none()
+                if role is None:
+                    self.system_owners.create(db, account_id, league_id)
+                self.system_owners.associate(db, account_id, league_id)
+            else:
+                self.system_owners.associate(db, account_id, league_id)
             membership_id = self.memberships.ensure(db, account_id, league_id)
         return BootstrapResult(
             account_id=account_id,
