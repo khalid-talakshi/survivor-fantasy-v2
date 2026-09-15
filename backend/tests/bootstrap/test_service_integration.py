@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 from threading import Barrier
 from uuid import UUID, uuid4
 
@@ -217,6 +218,117 @@ def test_bootstrap_recovers_an_exact_completed_initial_league(
         "SELECT is_commissioner FROM app.league_membership WHERE id = %s",
         (initial.membership_id,),
     ).fetchone() == (True,)
+
+
+def test_bootstrap_binds_markerless_existing_owner_to_completed_league(
+    migrated_database: psycopg.Connection[tuple[object, ...]], empty_database: URL
+) -> None:
+    request = _request()
+    account_id, league_id = uuid4(), uuid4()
+    migrated_database.execute(
+        """
+        INSERT INTO app.account (id, supabase_user_id, email, display_name)
+        VALUES (%s, %s, %s, %s)
+        """,
+        (account_id, request.supabase_user_id, "owner@example.com", request.display_name),
+    )
+    migrated_database.execute(
+        """
+        INSERT INTO app.league (id, name, season_name, state)
+        VALUES (%s, %s, %s, 'completed')
+        """,
+        (league_id, request.league_name, request.season_name),
+    )
+    migrated_database.execute(
+        "INSERT INTO app.system_role (account_id, is_system_owner) VALUES (%s, true)",
+        (account_id,),
+    )
+    migrated_database.commit()
+
+    result = _provision(empty_database, request)
+
+    assert result.account_id == account_id
+    assert result.league_id == league_id
+    assert migrated_database.execute(
+        "SELECT account_id, league_id FROM app.system_owner_initial_league"
+    ).fetchone() == (account_id, league_id)
+    assert migrated_database.execute(
+        "SELECT is_commissioner FROM app.league_membership WHERE id = %s",
+        (result.membership_id,),
+    ).fetchone() == (True,)
+
+
+def test_bootstrap_rejects_completed_league_without_existing_owner_role(
+    migrated_database: psycopg.Connection[tuple[object, ...]], empty_database: URL
+) -> None:
+    request = _request()
+    league_id = uuid4()
+    migrated_database.execute(
+        """
+        INSERT INTO app.league (id, name, season_name, state)
+        VALUES (%s, %s, %s, 'completed')
+        """,
+        (league_id, request.league_name, request.season_name),
+    )
+    migrated_database.commit()
+
+    with pytest.raises(BootstrapConflictError, match="not active"):
+        _provision(empty_database, request)
+
+    assert migrated_database.execute("SELECT count(*) FROM app.account").fetchone() == (0,)
+    assert migrated_database.execute("SELECT count(*) FROM app.system_role").fetchone() == (0,)
+    assert migrated_database.execute("SELECT count(*) FROM app.league_membership").fetchone() == (
+        0,
+    )
+
+
+@pytest.mark.parametrize(
+    ("is_commissioner", "deleted_at"),
+    [(False, None), (False, datetime.now(UTC))],
+    ids=["demoted", "soft_deleted"],
+)
+def test_bootstrap_recovers_markerless_completed_membership(
+    migrated_database: psycopg.Connection[tuple[object, ...]],
+    empty_database: URL,
+    is_commissioner: bool,
+    deleted_at: datetime | None,
+) -> None:
+    request = _request()
+    account_id, league_id, membership_id = uuid4(), uuid4(), uuid4()
+    migrated_database.execute(
+        """
+        INSERT INTO app.account (id, supabase_user_id, email, display_name)
+        VALUES (%s, %s, %s, %s)
+        """,
+        (account_id, request.supabase_user_id, "owner@example.com", request.display_name),
+    )
+    migrated_database.execute(
+        """
+        INSERT INTO app.league (id, name, season_name, state)
+        VALUES (%s, %s, %s, 'completed')
+        """,
+        (league_id, request.league_name, request.season_name),
+    )
+    migrated_database.execute(
+        "INSERT INTO app.system_role (account_id, is_system_owner) VALUES (%s, true)",
+        (account_id,),
+    )
+    migrated_database.execute(
+        """
+        INSERT INTO app.league_membership
+            (id, account_id, league_id, is_commissioner, deleted_at)
+        VALUES (%s, %s, %s, %s, %s)
+        """,
+        (membership_id, account_id, league_id, is_commissioner, deleted_at),
+    )
+    migrated_database.commit()
+
+    result = _provision(empty_database, request)
+
+    assert result.membership_id == membership_id
+    assert _recovery_audit(migrated_database, membership_id)[4] == (
+        "league_membership.commissioner_recovered"
+    )
 
 
 def test_bootstrap_recovers_membership_when_matching_owner_and_league_exist(

@@ -368,7 +368,7 @@ def test_initial_league_marker_migration_backfills_an_unambiguous_owner_membersh
         ).fetchone() == (league_id,)
 
 
-def test_initial_league_marker_migration_rejects_ambiguous_owner_memberships(
+def test_initial_league_marker_migration_leaves_multiple_owner_memberships_unbound(
     empty_database: URL,
 ) -> None:
     config = _alembic_config(empty_database)
@@ -410,8 +410,62 @@ def test_initial_league_marker_migration_rejects_ambiguous_owner_memberships(
         )
         connection.commit()
 
-    with pytest.raises(DBAPIError, match="multiple initial leagues"):
-        command.upgrade(config, "head")
+    command.upgrade(config, "head")
+    with psycopg.connect(_psycopg_url(empty_database)) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM app.system_owner_initial_league WHERE account_id = %s",
+            (account_id,),
+        ).fetchone() == (0,)
+
+
+def test_initial_league_marker_migration_does_not_infer_later_commissioner_league(
+    empty_database: URL,
+) -> None:
+    config = _alembic_config(empty_database)
+    command.upgrade(config, "20260914_0002")
+    account_id, initial_league_id, later_league_id = uuid4(), uuid4(), uuid4()
+
+    with psycopg.connect(_psycopg_url(empty_database)) as connection:
+        connection.execute(
+            """
+            INSERT INTO app.account (id, supabase_user_id, email, display_name)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (account_id, uuid4(), "owner@example.com", "Owner"),
+        )
+        connection.execute(
+            """
+            INSERT INTO app.league (id, name, season_name)
+            VALUES (%s, %s, %s), (%s, %s, %s)
+            """,
+            (
+                initial_league_id,
+                "Initial league",
+                "Season 49",
+                later_league_id,
+                "Later league",
+                "Season 50",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO app.system_role (account_id, is_system_owner) VALUES (%s, true)",
+            (account_id,),
+        )
+        connection.execute(
+            """
+            INSERT INTO app.league_membership (account_id, league_id, is_commissioner)
+            VALUES (%s, %s, false), (%s, %s, true)
+            """,
+            (account_id, initial_league_id, account_id, later_league_id),
+        )
+        connection.commit()
+
+    command.upgrade(config, "head")
+    with psycopg.connect(_psycopg_url(empty_database)) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM app.system_owner_initial_league WHERE account_id = %s",
+            (account_id,),
+        ).fetchone() == (0,)
 
 
 @pytest.mark.parametrize(

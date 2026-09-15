@@ -33,37 +33,20 @@ def upgrade() -> None:
     )
     op.execute(
         """
-        DO $migration$
-        BEGIN
-            IF EXISTS (
-                SELECT 1
-                FROM app.system_role AS role
-                JOIN app.league_membership AS membership
-                  ON membership.account_id = role.account_id
-                JOIN app.league AS league ON league.id = membership.league_id
-                WHERE membership.is_commissioner = true
-                  AND membership.deleted_at IS NULL
-                  AND league.deleted_at IS NULL
-                GROUP BY role.account_id
-                HAVING count(DISTINCT membership.league_id) > 1
-            ) THEN
-                RAISE EXCEPTION
-                    'cannot associate an existing system owner with multiple initial leagues';
-            END IF;
-        END
-        $migration$;
-        """
-    )
-    op.execute(
-        """
-        WITH association AS (
-            SELECT account_id, min(league_id::text)::uuid AS league_id
+        WITH membership_counts AS (
+            SELECT account_id, count(DISTINCT league_id) AS league_count
+            FROM app.league_membership
+            GROUP BY account_id
+        ), association AS (
+            SELECT membership.account_id, min(membership.league_id::text)::uuid AS league_id
             FROM app.league_membership AS membership
             JOIN app.league AS league ON league.id = membership.league_id
+            JOIN membership_counts AS counts ON counts.account_id = membership.account_id
             WHERE membership.is_commissioner = true
               AND membership.deleted_at IS NULL
               AND league.deleted_at IS NULL
-            GROUP BY account_id
+              AND counts.league_count = 1
+            GROUP BY membership.account_id
             HAVING count(DISTINCT league_id) = 1
         )
         INSERT INTO app.system_owner_initial_league (account_id, league_id)

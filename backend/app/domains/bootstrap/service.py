@@ -161,7 +161,11 @@ class LeagueProvisioner:
     """Create or verify the configured active initial league."""
 
     def ensure(
-        self, db: Session, initial_league_id: UUID | None, request: BootstrapRequest
+        self,
+        db: Session,
+        initial_league_id: UUID | None,
+        request: BootstrapRequest,
+        allow_completed_recovery: bool = False,
     ) -> UUID:
         if initial_league_id is not None:
             league = db.execute(
@@ -222,7 +226,11 @@ class LeagueProvisioner:
             ).scalar_one()
 
         league = matches[0]
-        if league["deleted_at"] is not None or league["state"] != "active":
+        if league["deleted_at"] is not None:
+            raise BootstrapConflictError("matching initial league is deleted")
+        if league["state"] != "active" and not (
+            allow_completed_recovery and league["state"] == "completed"
+        ):
             raise BootstrapConflictError("matching initial league is not active")
         return league["id"]
 
@@ -309,7 +317,12 @@ class BootstrapService:
             )
             account_id = self.accounts.ensure(db, request)
             owner = self.system_owners.state(db, account_id)
-            league_id = self.leagues.ensure(db, owner.initial_league_id, request)
+            league_id = self.leagues.ensure(
+                db,
+                owner.initial_league_id,
+                request,
+                allow_completed_recovery=owner.role_exists,
+            )
             if not owner.role_exists:
                 self.system_owners.create(db, account_id)
             if owner.initial_league_id is None:
