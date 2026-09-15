@@ -31,9 +31,11 @@ def upgrade() -> None:
         SET initial_league_id = association.league_id
         FROM (
             SELECT account_id, min(league_id::text)::uuid AS league_id
-            FROM app.league_membership
-            WHERE is_commissioner = true
-              AND deleted_at IS NULL
+            FROM app.league_membership AS membership
+            JOIN app.league AS league ON league.id = membership.league_id
+            WHERE membership.is_commissioner = true
+              AND membership.deleted_at IS NULL
+              AND league.deleted_at IS NULL
             GROUP BY account_id
             HAVING count(DISTINCT league_id) = 1
         ) AS association

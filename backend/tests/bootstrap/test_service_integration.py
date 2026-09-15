@@ -161,6 +161,32 @@ def test_bootstrap_rejects_second_existing_league_for_same_owner(
     ).fetchone() == (initial.membership_id,)
 
 
+def test_bootstrap_recovers_an_exact_completed_initial_league(
+    migrated_database: psycopg.Connection[tuple[object, ...]], empty_database: URL
+) -> None:
+    request = _request()
+    initial = _provision(empty_database, request)
+    migrated_database.execute(
+        "UPDATE app.league SET state = 'completed' WHERE id = %s", (initial.league_id,)
+    )
+    migrated_database.execute(
+        "UPDATE app.league_membership SET is_commissioner = false WHERE id = %s",
+        (initial.membership_id,),
+    )
+    migrated_database.commit()
+
+    restored = _provision(empty_database, request)
+
+    assert restored == initial
+    assert migrated_database.execute(
+        "SELECT state FROM app.league WHERE id = %s", (initial.league_id,)
+    ).fetchone() == ("completed",)
+    assert migrated_database.execute(
+        "SELECT is_commissioner FROM app.league_membership WHERE id = %s",
+        (initial.membership_id,),
+    ).fetchone() == (True,)
+
+
 def test_bootstrap_recovers_membership_when_matching_owner_and_league_exist(
     migrated_database: psycopg.Connection[tuple[object, ...]], empty_database: URL
 ) -> None:

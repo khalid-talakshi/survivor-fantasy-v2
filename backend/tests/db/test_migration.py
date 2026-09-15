@@ -420,12 +420,15 @@ def test_initial_league_marker_migration_rejects_ambiguous_owner_memberships(
 
 
 @pytest.mark.parametrize(
-    ("is_commissioner", "deleted_at"),
-    [(False, None), (True, datetime.now(UTC))],
-    ids=["non_commissioner", "soft_deleted_commissioner"],
+    ("is_commissioner", "deleted_at", "league_deleted_at"),
+    [(False, None, None), (True, datetime.now(UTC), None), (True, None, datetime.now(UTC))],
+    ids=["non_commissioner", "soft_deleted_commissioner", "soft_deleted_league"],
 )
 def test_initial_league_marker_migration_rejects_ineligible_owner_membership(
-    empty_database: URL, is_commissioner: bool, deleted_at: datetime | None
+    empty_database: URL,
+    is_commissioner: bool,
+    deleted_at: datetime | None,
+    league_deleted_at: datetime | None,
 ) -> None:
     config = _alembic_config(empty_database)
     command.upgrade(config, "20260914_0002")
@@ -440,8 +443,11 @@ def test_initial_league_marker_migration_rejects_ineligible_owner_membership(
             (account_id, uuid4(), "owner@example.com", "Owner"),
         )
         connection.execute(
-            "INSERT INTO app.league (id, name, season_name) VALUES (%s, %s, %s)",
-            (league_id, "Initial league", "Season 49"),
+            """
+            INSERT INTO app.league (id, name, season_name, deleted_at)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (league_id, "Initial league", "Season 49", league_deleted_at),
         )
         connection.execute(
             "INSERT INTO app.system_role (account_id, is_system_owner) VALUES (%s, true)",

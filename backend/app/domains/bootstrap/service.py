@@ -147,8 +147,8 @@ class LeagueProvisioner:
             ).mappings().one_or_none()
             if league is None:
                 raise BootstrapConflictError("system owner initial league no longer exists")
-            if league["deleted_at"] is not None or league["state"] != "active":
-                raise BootstrapConflictError("matching initial league is not active")
+            if league["deleted_at"] is not None:
+                raise BootstrapConflictError("matching initial league is deleted")
             if (
                 league["name"] != request.league_name
                 or league["season_name"] != request.season_name
