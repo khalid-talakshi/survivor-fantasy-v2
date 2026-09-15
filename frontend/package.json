@@ -9,15 +9,19 @@
     "lint": "eslint .",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest",
-    "generate:api": "openapi-typescript ../openapi.json -o src/lib/api.generated.ts"
+    "generate:api": "openapi-typescript ../openapi.json -o src/lib/api.generated.ts",
+    "generate:routes": "node scripts/generate-route-manifest.mjs",
+    "check:generated": "npm run generate:api && npm run generate:routes && git diff --exit-code -- ../openapi.json src/lib/api.generated.ts src/routeTree.gen.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.116.0",
+    "@tanstack/react-form": "^1.27.3",
     "@tanstack/react-query": "5.102.8",
+    "@tanstack/react-router": "^1.132.0",
     "openapi-fetch": "0.17.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "react-router-dom": "7.18.3"
+    "zod": "^4.1.5"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
