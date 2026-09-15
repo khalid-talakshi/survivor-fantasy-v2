@@ -1,13 +1,12 @@
 import { useState } from "react";
-import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useForm } from "@tanstack/react-form";
 import { useApp } from "./router";
 
-export function AuthForm({ passwordSetup = false }: { passwordSetup?: boolean }) {
+export function AuthForm({ passwordSetup = false, next, reason }: { passwordSetup?: boolean; next?: string; reason?: "unauthorized" }) {
   const app = useApp();
   const navigate = useNavigate();
-  const search = useSearch({ strict: false }) as { next?: string };
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(reason === "unauthorized" ? "Your session ended or your invitation could not be verified. Please sign in again." : null);
   const form = useForm({
     defaultValues: { email: "", password: "", confirmation: "" },
     onSubmit: async ({ value }) => {
@@ -15,7 +14,7 @@ export function AuthForm({ passwordSetup = false }: { passwordSetup?: boolean })
       const result = passwordSetup ? await app.auth.updatePassword(value.password) : await app.auth.signIn(value.email, value.password);
       if (result.error) { setSubmitError("We could not complete authentication. Check your details and try again."); return; }
       await app.queryClient.invalidateQueries({ queryKey: ["session"] });
-      const destination = passwordSetup ? (sessionStorage.getItem("sf:next") ?? "/app") : (search.next ?? sessionStorage.getItem("sf:next") ?? "/app");
+      const destination = passwordSetup ? (sessionStorage.getItem("sf:next") ?? "/app") : (next ?? sessionStorage.getItem("sf:next") ?? "/app");
       sessionStorage.removeItem("sf:next");
       await navigate({ to: destination });
     },
