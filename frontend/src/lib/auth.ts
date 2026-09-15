@@ -11,14 +11,14 @@ export const supabase = createClient(configuredUrl ?? "http://localhost:54321", 
 
 export function createAuthController(client: SupabaseClient = supabase, onChange?: (state: AuthState) => void) {
   let state: AuthState = { status: "initializing", session: null };
-  let initialization: Promise<AuthState> | undefined;
+  let initialization: Promise<void> | undefined;
   let unsubscribe: (() => void) | undefined;
   let listener = onChange;
 
   const publish = (next: AuthState) => { state = next; listener?.(next); };
   const handleChange = (_event: AuthChangeEvent, session: Session | null) => publish(session ? { status: "authenticated", session } : { status: "anonymous", session: null });
-  const initialize = () => {
-    if (initialization) return initialization;
+  const initialize = async (): Promise<AuthState> => {
+    if (initialization) { await initialization; return state; }
     initialization = (async () => {
       if (!unsubscribe) {
         const result = client.auth.onAuthStateChange(handleChange);
@@ -27,9 +27,9 @@ export function createAuthController(client: SupabaseClient = supabase, onChange
       const { data } = await client.auth.getSession();
       const next = data.session ? { status: "authenticated" as const, session: data.session } : { status: "anonymous" as const, session: null };
       publish(next);
-      return next;
     })();
-    return initialization;
+    await initialization;
+    return state;
   };
   return {
     initialize,

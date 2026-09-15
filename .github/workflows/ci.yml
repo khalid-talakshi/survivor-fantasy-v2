@@ -79,4 +79,4 @@ jobs:
     needs: [backend, frontend]
     steps:
       - uses: actions/checkout@v4
-      - run: docker build --tag survivor-fantasy:ci .
+      - run: docker build --tag survivor-fantasy:ci --build-arg VITE_SUPABASE_URL=https://ci.supabase.co --build-arg VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_ci .
