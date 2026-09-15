@@ -159,6 +159,28 @@ def test_bootstrap_recovers_existing_owner_role_without_initial_league(
     ).fetchone() == (account_id, result.league_id)
 
 
+def test_bootstrap_ignores_soft_deleted_email_history(
+    migrated_database: psycopg.Connection[tuple[object, ...]], empty_database: URL
+) -> None:
+    request = _request()
+    migrated_database.execute(
+        """
+        INSERT INTO app.account (supabase_user_id, email, display_name, deleted_at)
+        VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+        """,
+        (uuid4(), "owner@example.com", "Former Owner"),
+    )
+    migrated_database.commit()
+
+    result = _provision(empty_database, request)
+
+    assert migrated_database.execute("SELECT count(*) FROM app.account").fetchone() == (2,)
+    assert migrated_database.execute(
+        "SELECT supabase_user_id, deleted_at FROM app.account WHERE id = %s",
+        (result.account_id,),
+    ).fetchone() == (request.supabase_user_id, None)
+
+
 def test_bootstrap_rejects_second_existing_league_for_same_owner(
     migrated_database: psycopg.Connection[tuple[object, ...]], empty_database: URL
 ) -> None:
@@ -468,6 +490,34 @@ def test_bootstrap_restores_a_soft_deleted_matching_membership(
     assert isinstance(audit[5]["deleted_at"], str)
     assert audit[6] == {"deleted_at": None, "is_commissioner": True}
     assert audit[7] is not None
+
+
+def test_bootstrap_prefers_active_membership_over_deleted_history(
+    migrated_database: psycopg.Connection[tuple[object, ...]], empty_database: URL
+) -> None:
+    request = _request()
+    initial = _provision(empty_database, request)
+    migrated_database.execute(
+        "UPDATE app.league_membership SET deleted_at = CURRENT_TIMESTAMP WHERE id = %s",
+        (initial.membership_id,),
+    )
+    active_membership_id = uuid4()
+    migrated_database.execute(
+        """
+        INSERT INTO app.league_membership
+            (id, account_id, league_id, is_commissioner)
+        VALUES (%s, %s, %s, true)
+        """,
+        (active_membership_id, initial.account_id, initial.league_id),
+    )
+    migrated_database.commit()
+
+    restored = _provision(empty_database, request)
+
+    assert restored.membership_id == active_membership_id
+    assert migrated_database.execute(
+        "SELECT count(*) FROM app.audit_event WHERE entity_type = 'league_membership'"
+    ).fetchone() == (0,)
 
 
 def test_conflict_rolls_back_all_new_bootstrap_records(

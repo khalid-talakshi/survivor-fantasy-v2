@@ -62,21 +62,38 @@ class AccountProvisioner:
     """Create or verify the local projection of an external identity."""
 
     def ensure(self, db: Session, request: BootstrapRequest) -> UUID:
-        rows = db.execute(
+        supabase_row = db.execute(
             text(
                 """
                 SELECT id, supabase_user_id, email, display_name, deleted_at
                 FROM app.account
                 WHERE supabase_user_id = :supabase_user_id
-                   OR lower(btrim(email)) = :email
                 FOR UPDATE
                 """
             ),
-            {"supabase_user_id": request.supabase_user_id, "email": request.email},
+            {"supabase_user_id": request.supabase_user_id},
+        ).mappings().one_or_none()
+        email_rows = db.execute(
+            text(
+                """
+                SELECT id, supabase_user_id, email, display_name, deleted_at
+                FROM app.account
+                WHERE deleted_at IS NULL
+                  AND lower(btrim(email)) = :email
+                FOR UPDATE
+                """
+            ),
+            {"email": request.email},
         ).mappings().all()
-        if len(rows) > 1:
+        if supabase_row is not None and supabase_row["deleted_at"] is not None:
+            raise BootstrapConflictError("matching account is soft-deleted")
+        if supabase_row is not None and any(
+            row["id"] != supabase_row["id"] for row in email_rows
+        ):
             raise BootstrapConflictError("Supabase user ID and email identify different accounts")
-        if not rows:
+        if supabase_row is None and len(email_rows) > 1:
+            raise BootstrapConflictError("Supabase user ID and email identify different accounts")
+        if supabase_row is None and not email_rows:
             return db.execute(
                 text(
                     """
@@ -92,9 +109,7 @@ class AccountProvisioner:
                 },
             ).scalar_one()
 
-        account = rows[0]
-        if account["deleted_at"] is not None:
-            raise BootstrapConflictError("matching account is soft-deleted")
+        account = supabase_row or email_rows[0]
         if (
             account["supabase_user_id"] != request.supabase_user_id
             or normalize_email(account["email"]) != request.email
@@ -239,20 +254,65 @@ class CommissionerMembershipProvisioner:
     """Create or verify the owner's commissioner membership for the initial league."""
 
     def ensure(self, db: Session, account_id: UUID, league_id: UUID) -> UUID:
-        rows = db.execute(
+        active_rows = db.execute(
             text(
                 """
                 SELECT id, is_commissioner, participation_state, deleted_at
                 FROM app.league_membership
-                WHERE account_id = :account_id AND league_id = :league_id
+                WHERE account_id = :account_id
+                  AND league_id = :league_id
+                  AND deleted_at IS NULL
                 FOR UPDATE
                 """
             ),
             {"account_id": account_id, "league_id": league_id},
         ).mappings().all()
-        if len(rows) > 1:
+        if len(active_rows) > 1:
+            raise BootstrapConflictError(
+                "multiple active memberships match the initial owner and league"
+            )
+        if active_rows:
+            active = active_rows[0]
+            if active["is_commissioner"]:
+                return active["id"]
+            membership_id = db.execute(
+                text(
+                    """
+                    UPDATE app.league_membership
+                    SET is_commissioner = true, version = version + 1
+                    WHERE id = :membership_id
+                    RETURNING id
+                    """
+                ),
+                {"membership_id": active["id"]},
+            ).scalar_one()
+            AuditWriter(db).write(
+                actor_account_id=account_id,
+                league_id=league_id,
+                event_type="league_membership.commissioner_recovered",
+                entity_type="league_membership",
+                entity_id=membership_id,
+                before_state={"deleted_at": None, "is_commissioner": False},
+                after_state={"deleted_at": None, "is_commissioner": True},
+            )
+            return membership_id
+
+        deleted_rows = db.execute(
+            text(
+                """
+                SELECT id, is_commissioner, participation_state, deleted_at
+                FROM app.league_membership
+                WHERE account_id = :account_id
+                  AND league_id = :league_id
+                  AND deleted_at IS NOT NULL
+                FOR UPDATE
+                """
+            ),
+            {"account_id": account_id, "league_id": league_id},
+        ).mappings().all()
+        if len(deleted_rows) > 1:
             raise BootstrapConflictError("multiple memberships match the initial owner and league")
-        if not rows:
+        if not deleted_rows:
             return db.execute(
                 text(
                     """
@@ -264,8 +324,8 @@ class CommissionerMembershipProvisioner:
                 {"account_id": account_id, "league_id": league_id},
             ).scalar_one()
 
-        membership = rows[0]
-        if membership["deleted_at"] is not None or not membership["is_commissioner"]:
+        membership = deleted_rows[0]
+        if membership["deleted_at"] is not None:
             membership_id = db.execute(
                 text(
                     """
