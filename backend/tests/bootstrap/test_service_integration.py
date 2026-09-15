@@ -303,7 +303,7 @@ def test_bootstrap_restores_a_soft_deleted_matching_membership(
 def test_conflict_rolls_back_all_new_bootstrap_records(
     migrated_database: psycopg.Connection[tuple[object, ...]], empty_database: URL
 ) -> None:
-    conflicting_owner = uuid4()
+    conflicting_owner, unrelated_league_id = uuid4(), uuid4()
     migrated_database.execute(
         """
         INSERT INTO app.account (id, supabase_user_id, email, display_name)
@@ -312,8 +312,15 @@ def test_conflict_rolls_back_all_new_bootstrap_records(
         (conflicting_owner, uuid4(), "other@example.com", "Other"),
     )
     migrated_database.execute(
-        "INSERT INTO app.system_role (account_id, is_system_owner) VALUES (%s, true)",
-        (conflicting_owner,),
+        "INSERT INTO app.league (id, name, season_name) VALUES (%s, %s, %s)",
+        (unrelated_league_id, "Existing league", "Season 1"),
+    )
+    migrated_database.execute(
+        """
+        INSERT INTO app.system_role (account_id, is_system_owner, initial_league_id)
+        VALUES (%s, true, %s)
+        """,
+        (conflicting_owner, unrelated_league_id),
     )
     migrated_database.commit()
 
@@ -321,7 +328,7 @@ def test_conflict_rolls_back_all_new_bootstrap_records(
         _provision(empty_database, _request())
 
     assert migrated_database.execute("SELECT count(*) FROM app.account").fetchone() == (1,)
-    assert migrated_database.execute("SELECT count(*) FROM app.league").fetchone() == (0,)
+    assert migrated_database.execute("SELECT count(*) FROM app.league").fetchone() == (1,)
     assert (
         migrated_database.execute("SELECT count(*) FROM app.league_membership").fetchone()
         == (0,)

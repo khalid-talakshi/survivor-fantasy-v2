@@ -910,8 +910,11 @@ def test_runtime_login_has_effective_least_privilege_access(
                 runtime.execute(statement, parameters)
 
         runtime.execute(
-            "INSERT INTO app.system_role (account_id, is_system_owner) VALUES (%s, true)",
-            (values["account_one"],),
+            """
+            INSERT INTO app.system_role (account_id, is_system_owner, initial_league_id)
+            VALUES (%s, true, %s)
+            """,
+            (values["account_one"], values["league_one"]),
         )
         runtime.commit()
         with pytest.raises(psycopg.errors.InsufficientPrivilege), runtime.transaction():
