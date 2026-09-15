@@ -45,6 +45,12 @@ class BootstrapResult:
     membership_id: UUID
 
 
+@dataclass(frozen=True)
+class SystemOwnerState:
+    role_exists: bool
+    initial_league_id: UUID | None
+
+
 def _required_text(value: str, name: str) -> str:
     normalized = value.strip()
     if not normalized:
@@ -103,18 +109,17 @@ class AccountProvisioner:
 class SystemOwnerProvisioner:
     """Ensure the singleton application-owned global role belongs to the account."""
 
-    def initial_league_id(self, db: Session, account_id: UUID) -> UUID | None:
+    def state(self, db: Session, account_id: UUID) -> SystemOwnerState:
         role = db.execute(
             text(
                 """
                 SELECT account_id
                 FROM app.system_role
-                FOR UPDATE
                 """
             )
         ).mappings().one_or_none()
         if role is None:
-            return None
+            return SystemOwnerState(role_exists=False, initial_league_id=None)
         if role["account_id"] != account_id:
             raise BootstrapConflictError("a different account is already the system owner")
         marker = db.execute(
@@ -123,14 +128,13 @@ class SystemOwnerProvisioner:
                 SELECT league_id
                 FROM app.system_owner_initial_league
                 WHERE account_id = :account_id
-                FOR UPDATE
                 """
             ),
             {"account_id": account_id},
         ).scalar_one_or_none()
-        return marker
+        return SystemOwnerState(role_exists=True, initial_league_id=marker)
 
-    def create(self, db: Session, account_id: UUID, league_id: UUID) -> None:
+    def create(self, db: Session, account_id: UUID) -> None:
         db.execute(
             text(
                 """
@@ -147,7 +151,6 @@ class SystemOwnerProvisioner:
                 """
                 INSERT INTO app.system_owner_initial_league (account_id, league_id)
                 VALUES (:account_id, :league_id)
-                ON CONFLICT (account_id) DO NOTHING
                 """
             ),
             {"account_id": account_id, "league_id": league_id},
@@ -305,16 +308,11 @@ class BootstrapService:
                 {"lock_key": BOOTSTRAP_ADVISORY_LOCK_KEY},
             )
             account_id = self.accounts.ensure(db, request)
-            initial_league_id = self.system_owners.initial_league_id(db, account_id)
-            league_id = self.leagues.ensure(db, initial_league_id, request)
-            if initial_league_id is None:
-                role = db.execute(
-                    text("SELECT account_id FROM app.system_role")
-                ).scalar_one_or_none()
-                if role is None:
-                    self.system_owners.create(db, account_id, league_id)
-                self.system_owners.associate(db, account_id, league_id)
-            else:
+            owner = self.system_owners.state(db, account_id)
+            league_id = self.leagues.ensure(db, owner.initial_league_id, request)
+            if not owner.role_exists:
+                self.system_owners.create(db, account_id)
+            if owner.initial_league_id is None:
                 self.system_owners.associate(db, account_id, league_id)
             membership_id = self.memberships.ensure(db, account_id, league_id)
         return BootstrapResult(

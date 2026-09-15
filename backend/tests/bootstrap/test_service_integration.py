@@ -86,8 +86,11 @@ def test_bootstrap_creates_initial_owner_league_and_pending_commissioner_members
 def test_bootstrap_first_run_works_with_restricted_runtime_role(
     migrated_database: psycopg.Connection[tuple[object, ...]], runtime_database_url: URL
 ) -> None:
-    result = _provision(runtime_database_url, _request())
+    request = _request()
+    result = _provision(runtime_database_url, request)
+    repeated = _provision(runtime_database_url, request)
 
+    assert repeated == result
     assert migrated_database.execute("SELECT count(*) FROM app.account").fetchone() == (1,)
     assert migrated_database.execute(
         "SELECT account_id FROM app.system_role"
@@ -96,6 +99,9 @@ def test_bootstrap_first_run_works_with_restricted_runtime_role(
     assert migrated_database.execute(
         "SELECT id FROM app.league_membership"
     ).fetchone() == (result.membership_id,)
+    assert migrated_database.execute(
+        "SELECT account_id, league_id FROM app.system_owner_initial_league"
+    ).fetchone() == (result.account_id, result.league_id)
 
 
 def test_bootstrap_is_idempotent_and_recovers_missing_role_league_and_membership(
