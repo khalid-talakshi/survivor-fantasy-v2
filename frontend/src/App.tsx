@@ -1,49 +1,17 @@
-const features = [
-  { index: "01", title: "Build your roster", copy: "Choose one castaway from every commissioner-defined bucket." },
-  { index: "02", title: "Follow every point", copy: "See an auditable scoring ledger and standings that update after every correction." },
-  { index: "03", title: "Back a winner", copy: "Allocate virtual currency while league-wide caps keep the field competitive." }
-];
+import * as React from "react";
+import { Link, Outlet, useLocation, useNavigate, useParams, useSearch } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { useApp } from "./router";
+import { sessionQueryOptions } from "./lib/session";
+import { AuthForm as AuthFormView } from "./AuthForm";
+import { hasAuthCallbackError, rememberUnauthorizedReason } from "./lib/auth-callback";
 
-export function App() {
-  return (
-    <main>
-      <header className="site-header">
-        <a className="brand" href="/" aria-label="Survivor Fantasy home">
-          <span className="brand-mark">SF</span>
-          <span>Survivor Fantasy</span>
-        </a>
-        <span className="invite-note">Private leagues · by invitation</span>
-      </header>
-
-      <section className="hero" aria-labelledby="hero-title">
-        <div className="eyebrow"><span>Season 01</span><span>Field notes</span></div>
-        <div className="hero-copy">
-          <p className="kicker">Outwit the spreadsheet.</p>
-          <h1 id="hero-title">Your tribe.<br />Your picks.<br /><em>Your season.</em></h1>
-          <p className="lede">A private fantasy league built for every vote, challenge, blindside, and comeback.</p>
-          <button type="button">Sign in with your invitation <span aria-hidden="true">↗</span></button>
-        </div>
-        <div className="torch" aria-hidden="true">
-          <div className="sun" />
-          <div className="flame flame-one" />
-          <div className="flame flame-two" />
-          <div className="stem" />
-          <div className="water-line one" />
-          <div className="water-line two" />
-          <div className="water-line three" />
-        </div>
-      </section>
-
-      <section className="feature-grid" aria-label="How the game works">
-        {features.map((feature) => (
-          <article key={feature.index}>
-            <span>{feature.index}</span>
-            <h2>{feature.title}</h2>
-            <p>{feature.copy}</p>
-          </article>
-        ))}
-      </section>
-    </main>
-  );
-}
-
+export function Landing() { return <main><header className="site-header"><Link className="brand" to="/"><span className="brand-mark">SF</span><span>Survivor Fantasy</span></Link><span className="invite-note">Private leagues · by invitation</span></header><section className="hero"><div className="hero-copy"><p className="kicker">Outwit the spreadsheet.</p><h1>Your tribe.<br />Your picks.<br /><em>Your season.</em></h1><p className="lede">A private fantasy league built for every vote, challenge, blindside, and comeback.</p><Link className="cta" to="/sign-in">Sign in with your invitation ↗</Link></div></section></main>; }
+export function SignIn() { const search = useSearch({ from: "/sign-in" }); return <AuthFormView next={search.next} reason={search.reason} />; }
+export function SetPassword() { return <AuthFormView passwordSetup />; }
+export function Callback() { const app = useApp(); const location = useLocation(); const navigate = useNavigate(); React.useEffect(() => { void (async () => { const params = new URLSearchParams(location.searchStr); const code = params.get("code"); if (hasAuthCallbackError(location.searchStr, location.hash)) { rememberUnauthorizedReason(); await navigate({ to: "/sign-in", search: { reason: "unauthorized", next: "/app" }, replace: true }); return; } if (code) { const result = await app.auth.client.auth.exchangeCodeForSession(code); if (result.error) { rememberUnauthorizedReason(); await navigate({ to: "/sign-in", search: { reason: "unauthorized", next: "/app" }, replace: true }); return; } } const state = await app.auth.initialize(); await navigate({ to: state.status === "authenticated" ? "/set-password" : "/sign-in", replace: true }); })(); }, [app.auth, location.hash, location.searchStr, navigate]); return <StatePage title="Finishing your invitation…" />; }
+export function StatePage({ title, copy }: { title: string; copy?: string }) { return <div className="state-page"><h1>{title}</h1>{copy && <p>{copy}</p>}</div>; }
+export function AppShell() { const app = useApp(); const session = useQuery(sessionQueryOptions(app.api)); const [open, setOpen] = React.useState(false); if (session.isPending) return <StatePage title="Loading your leagues…" />; if (session.isError) return <StatePage title="Service unavailable" copy="Try again shortly." />; const data = session.data; return <main className="app-shell"><a className="skip-link" href="#content">Skip to content</a><header className="app-header"><Link className="brand" to="/app"><span className="brand-mark">SF</span><span>Survivor Fantasy</span></Link><button className="menu-button" type="button" aria-expanded={open} onClick={() => setOpen(!open)}>Menu</button><nav aria-label="Main navigation" data-open={open}><Link to="/app">Leagues</Link>{data.account.is_system_owner && <Link to="/app/admin">System admin</Link>}<button type="button" onClick={async () => { await app.auth.signOut(); app.queryClient.clear(); await app.router.navigate({ to: "/sign-in" }); }}>Sign out</button></nav></header><section id="content" className="app-content"><Outlet /></section></main>; }
+export function LeagueHome() { const app = useApp(); const { data } = useQuery(sessionQueryOptions(app.api)); if (!data?.leagues.length) return <StatePage title="No leagues yet" copy="Your invitation will appear here when a commissioner adds you." />; return <><p className="kicker">Your leagues</p><h1>Choose your arena.</h1><div className="league-grid">{data.leagues.map((league) => <Link className="league-card" key={league.id} to="/app/leagues/$leagueId/overview" params={{ leagueId: league.id }}><span>{league.season_name}</span><h2>{league.name}</h2><p>{league.is_commissioner ? "Commissioner" : "Player"} · {league.participation_state}</p></Link>)}</div></>; }
+export function LeaguePage() { const { leagueId } = useParams({ strict: false }); const app = useApp(); const { data } = useQuery(sessionQueryOptions(app.api)); const league = data?.leagues.find((item) => item.id === leagueId); if (!league) return <StatePage title="League unavailable" copy="You do not have access to that league." />; return <><p className="kicker">{league.season_name}</p><h1>{league.name}</h1><nav className="league-nav" aria-label="League navigation"><Link to="/app/leagues/$leagueId/overview" params={{ leagueId }}>Overview</Link><Link to="/app/leagues/$leagueId/roster" params={{ leagueId }}>Roster</Link><Link to="/app/leagues/$leagueId/standings" params={{ leagueId }}>Standings</Link><Link to="/app/leagues/$leagueId/wagers" params={{ leagueId }}>Wagers</Link>{league.is_commissioner && <Link to="/app/leagues/$leagueId/admin" params={{ leagueId }}>Admin</Link>}</nav><Outlet /></>; }
+export function ComingSoon() { return <StatePage title="Coming soon" copy="This league experience is being prepared for the next issue." />; }
