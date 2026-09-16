@@ -7,12 +7,14 @@ import { createAppRouter } from "./router";
 import { createAuthController } from "./lib/auth";
 import { createRuntime } from "./lib/api";
 import { rememberUnauthorizedReason } from "./lib/auth-callback";
+import { rememberDestination } from "./lib/destination";
 
 const auth = createAuthController();
 const routerRef: { current?: ReturnType<typeof createAppRouter> } = {};
 const runtime = createRuntime(auth, async () => {
   rememberUnauthorizedReason();
-  await routerRef.current?.navigate({ to: "/sign-in", search: { reason: "unauthorized", next: "/app" } });
+  const next = rememberDestination(routerRef.current?.state.location.href);
+  await routerRef.current?.navigate({ to: "/sign-in", search: { reason: "unauthorized", next } });
 });
 const router = createAppRouter({ auth, runtime });
 routerRef.current = router;
