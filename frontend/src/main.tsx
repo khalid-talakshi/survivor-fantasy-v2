@@ -6,10 +6,12 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { createAppRouter } from "./router";
 import { createAuthController } from "./lib/auth";
 import { createRuntime } from "./lib/api";
+import { rememberUnauthorizedReason } from "./lib/auth-callback";
 
 const auth = createAuthController();
 const routerRef: { current?: ReturnType<typeof createAppRouter> } = {};
 const runtime = createRuntime(auth, async () => {
+  rememberUnauthorizedReason();
   await routerRef.current?.navigate({ to: "/sign-in", search: { reason: "unauthorized", next: "/app" } });
 });
 const router = createAppRouter({ auth, runtime });
