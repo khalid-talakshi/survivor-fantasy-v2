@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from backend.app.domains.bootstrap.service import (
     BootstrapConflictError,
     BootstrapRequest,
+    BootstrapResult,
     BootstrapService,
 )
 
@@ -278,6 +279,48 @@ def test_bootstrap_binds_markerless_existing_owner_to_completed_league(
         "SELECT is_commissioner FROM app.league_membership WHERE id = %s",
         (result.membership_id,),
     ).fetchone() == (True,)
+    audit = _recovery_audit(migrated_database, result.membership_id)
+    assert audit[5] == {"deleted_at": None, "is_commissioner": None}
+    assert audit[6] == {"deleted_at": None, "is_commissioner": True}
+
+
+def test_bootstrap_recovers_completed_league_when_owner_role_is_missing(
+    migrated_database: psycopg.Connection[tuple[object, ...]], empty_database: URL
+) -> None:
+    request = _request()
+    account_id, league_id, membership_id = uuid4(), uuid4(), uuid4()
+    migrated_database.execute(
+        """
+        INSERT INTO app.account (id, supabase_user_id, email, display_name)
+        VALUES (%s, %s, %s, %s)
+        """,
+        (account_id, request.supabase_user_id, "owner@example.com", request.display_name),
+    )
+    migrated_database.execute(
+        """
+        INSERT INTO app.league (id, name, season_name, state)
+        VALUES (%s, %s, %s, 'completed')
+        """,
+        (league_id, request.league_name, request.season_name),
+    )
+    migrated_database.execute(
+        """
+        INSERT INTO app.league_membership (id, account_id, league_id, is_commissioner)
+        VALUES (%s, %s, %s, false)
+        """,
+        (membership_id, account_id, league_id),
+    )
+    migrated_database.commit()
+
+    result = _provision(empty_database, request)
+
+    assert result == BootstrapResult(account_id, league_id, membership_id)
+    assert migrated_database.execute(
+        "SELECT account_id FROM app.system_role"
+    ).fetchone() == (account_id,)
+    assert _recovery_audit(migrated_database, membership_id)[4] == (
+        "league_membership.commissioner_recovered"
+    )
 
 
 def test_bootstrap_rejects_completed_league_without_existing_owner_role(

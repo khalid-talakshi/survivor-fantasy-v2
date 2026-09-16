@@ -51,6 +51,12 @@ class SystemOwnerState:
     initial_league_id: UUID | None
 
 
+@dataclass(frozen=True)
+class LeagueEnsureResult:
+    league_id: UUID
+    created: bool
+
+
 def _required_text(value: str, name: str) -> str:
     normalized = value.strip()
     if not normalized:
@@ -171,6 +177,33 @@ class SystemOwnerProvisioner:
             {"account_id": account_id, "league_id": league_id},
         )
 
+    def has_matching_membership(
+        self, db: Session, account_id: UUID, request: BootstrapRequest
+    ) -> bool:
+        return bool(
+            db.execute(
+                text(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM app.league_membership AS membership
+                        JOIN app.league AS league
+                          ON league.id = membership.league_id
+                        WHERE membership.account_id = :account_id
+                          AND league.name = :league_name
+                          AND league.season_name = :season_name
+                          AND league.deleted_at IS NULL
+                    )
+                    """
+                ),
+                {
+                    "account_id": account_id,
+                    "league_name": request.league_name,
+                    "season_name": request.season_name,
+                },
+            ).scalar_one()
+        )
+
 
 class LeagueProvisioner:
     """Create or verify the configured active initial league."""
@@ -181,7 +214,7 @@ class LeagueProvisioner:
         initial_league_id: UUID | None,
         request: BootstrapRequest,
         allow_completed_recovery: bool = False,
-    ) -> UUID:
+    ) -> LeagueEnsureResult:
         if initial_league_id is not None:
             league = db.execute(
                 text(
@@ -205,7 +238,7 @@ class LeagueProvisioner:
                 raise BootstrapConflictError(
                     "initial league does not match bootstrap league values"
                 )
-            return league["id"]
+            return LeagueEnsureResult(league_id=league["id"], created=False)
 
         rows = db.execute(
             text(
@@ -229,7 +262,7 @@ class LeagueProvisioner:
         if rows and not matches:
             raise BootstrapConflictError("existing league conflicts with bootstrap league values")
         if not matches:
-            return db.execute(
+            league_id = db.execute(
                 text(
                     """
                     INSERT INTO app.league (name, season_name)
@@ -239,6 +272,7 @@ class LeagueProvisioner:
                 ),
                 {"league_name": request.league_name, "season_name": request.season_name},
             ).scalar_one()
+            return LeagueEnsureResult(league_id=league_id, created=True)
 
         league = matches[0]
         if league["deleted_at"] is not None:
@@ -247,13 +281,15 @@ class LeagueProvisioner:
             allow_completed_recovery and league["state"] == "completed"
         ):
             raise BootstrapConflictError("matching initial league is not active")
-        return league["id"]
+        return LeagueEnsureResult(league_id=league["id"], created=False)
 
 
 class CommissionerMembershipProvisioner:
     """Create or verify the owner's commissioner membership for the initial league."""
 
-    def ensure(self, db: Session, account_id: UUID, league_id: UUID) -> UUID:
+    def ensure(
+        self, db: Session, account_id: UUID, league_id: UUID, audit_missing: bool = False
+    ) -> UUID:
         active_rows = db.execute(
             text(
                 """
@@ -313,7 +349,7 @@ class CommissionerMembershipProvisioner:
         if len(deleted_rows) > 1:
             raise BootstrapConflictError("multiple memberships match the initial owner and league")
         if not deleted_rows:
-            return db.execute(
+            membership_id = db.execute(
                 text(
                     """
                     INSERT INTO app.league_membership (account_id, league_id, is_commissioner)
@@ -323,6 +359,17 @@ class CommissionerMembershipProvisioner:
                 ),
                 {"account_id": account_id, "league_id": league_id},
             ).scalar_one()
+            if audit_missing:
+                AuditWriter(db).write(
+                    actor_account_id=account_id,
+                    league_id=league_id,
+                    event_type="league_membership.commissioner_recovered",
+                    entity_type="league_membership",
+                    entity_id=membership_id,
+                    before_state={"deleted_at": None, "is_commissioner": None},
+                    after_state={"deleted_at": None, "is_commissioner": True},
+                )
+            return membership_id
 
         membership = deleted_rows[0]
         if membership["deleted_at"] is not None:
@@ -377,19 +424,27 @@ class BootstrapService:
             )
             account_id = self.accounts.ensure(db, request)
             owner = self.system_owners.state(db, account_id)
-            league_id = self.leagues.ensure(
+            allow_completed_recovery = owner.role_exists or (
+                self.system_owners.has_matching_membership(db, account_id, request)
+            )
+            league = self.leagues.ensure(
                 db,
                 owner.initial_league_id,
                 request,
-                allow_completed_recovery=owner.role_exists,
+                allow_completed_recovery=allow_completed_recovery,
             )
             if not owner.role_exists:
                 self.system_owners.create(db, account_id)
             if owner.initial_league_id is None:
-                self.system_owners.associate(db, account_id, league_id)
-            membership_id = self.memberships.ensure(db, account_id, league_id)
+                self.system_owners.associate(db, account_id, league.league_id)
+            membership_id = self.memberships.ensure(
+                db,
+                account_id,
+                league.league_id,
+                audit_missing=not league.created,
+            )
         return BootstrapResult(
             account_id=account_id,
-            league_id=league_id,
+            league_id=league.league_id,
             membership_id=membership_id,
         )
