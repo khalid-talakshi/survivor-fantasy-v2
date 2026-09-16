@@ -34,6 +34,7 @@ class SeededDomain:
     secondary_castaway_id: UUID
     primary_action_id: UUID
     primary_audit_event_id: UUID
+    primary_audit_correlation_id: UUID
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -133,6 +134,7 @@ def seeded_domain(
     secondary_castaway_id = uuid4()
     primary_action_id = uuid4()
     primary_audit_event_id = uuid4()
+    primary_audit_correlation_id = uuid4()
 
     migrated_database.execute(
         """
@@ -217,10 +219,16 @@ def seeded_domain(
     migrated_database.execute(
         """
         INSERT INTO app.audit_event
-            (id, actor_account_id, league_id, event_type, occurred_at)
-        VALUES (%s, %s, %s, 'fixture.seeded', %s)
+            (id, actor_account_id, league_id, correlation_id, event_type, occurred_at)
+        VALUES (%s, %s, %s, %s, 'fixture.seeded', %s)
         """,
-        (primary_audit_event_id, commissioner_account_id, primary_league_id, frozen_time),
+        (
+            primary_audit_event_id,
+            commissioner_account_id,
+            primary_league_id,
+            primary_audit_correlation_id,
+            frozen_time,
+        ),
     )
     migrated_database.commit()
     return SeededDomain(
@@ -238,6 +246,7 @@ def seeded_domain(
         secondary_castaway_id=secondary_castaway_id,
         primary_action_id=primary_action_id,
         primary_audit_event_id=primary_audit_event_id,
+        primary_audit_correlation_id=primary_audit_correlation_id,
     )
 
 
