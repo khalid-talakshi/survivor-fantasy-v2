@@ -34,10 +34,6 @@ def _insert_projection_data(
             ),
         )
         cursor.execute(
-            "INSERT INTO app.system_role (account_id, is_system_owner) VALUES (%s, true)",
-            (account_id,),
-        )
-        cursor.execute(
             """
             INSERT INTO app.league (id, name, season_name, state, roster_locked, deleted_at)
             VALUES
@@ -47,6 +43,13 @@ def _insert_projection_data(
                 (%s, 'Deleted', '45', 'active', false, CURRENT_TIMESTAMP)
             """,
             (active_zulu, active_alpha, completed, deleted),
+        )
+        cursor.execute(
+            """
+            INSERT INTO app.system_role (account_id, is_system_owner)
+            VALUES (%s, true)
+            """,
+            (account_id,),
         )
         cursor.execute(
             """

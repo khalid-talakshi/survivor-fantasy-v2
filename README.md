@@ -55,6 +55,25 @@ It also retains the revocation of `CREATE` on the `public` schema from both `PUB
 runtime role as intentional database hardening; restoring broad object-creation access during a
 rollback would be unsafe.
 
+## Initial system bootstrap
+
+After creating the intended user in Supabase Auth, provision or recover the application-owned
+system owner and its initial league with the runtime database connection. The command does not
+call the Supabase Admin API or create an Auth user:
+
+```bash
+uv run python -m backend.app.domains.bootstrap.cli \
+  --supabase-user-id "<Supabase Auth UUID>" \
+  --email "owner@example.com" \
+  --display-name "Owner" \
+  --league-name "Survivor Fantasy" \
+  --season-name "Survivor 49"
+```
+
+The same parameters may be run again to recover any missing owner role, initial league, or
+commissioner membership. It rejects mismatched account, owner, league, or membership state and
+rolls back the entire attempt.
+
 Run the frontend in another terminal:
 
 ```bash
