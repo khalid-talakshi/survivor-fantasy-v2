@@ -1,6 +1,7 @@
 import os
 from collections.abc import Callable
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID, uuid4
 
@@ -27,6 +28,7 @@ EXPECTED_TABLES = {
     "scoring_action",
     "scoring_event",
     "system_role",
+    "system_owner_initial_league",
     "wager",
     "wager_set",
 }
@@ -147,6 +149,7 @@ EXPECTED_COLUMNS = {
         "version",
     },
     "system_role": {"account_id", "is_system_owner"},
+    "system_owner_initial_league": {"account_id", "league_id"},
     "wager": {"id", "league_id", "participation_id", "castaway_id", "amount", "deleted_at"},
     "wager_set": {
         "id",
@@ -274,6 +277,8 @@ EXPECTED_FOREIGN_KEY_RELATIONSHIPS = {
     ("app.scoring_event", "app.castaway"),
     ("app.scoring_event", "app.scoring_action"),
     ("app.system_role", "app.account"),
+    ("app.system_owner_initial_league", "app.system_role"),
+    ("app.system_owner_initial_league", "app.league"),
     ("app.wager", "app.betting_participation"),
     ("app.wager", "app.castaway"),
     ("app.wager_set", "app.betting_config"),
@@ -288,7 +293,7 @@ def test_upgrade_and_downgrade_from_empty_database(empty_database: URL) -> None:
     with psycopg.connect(_psycopg_url(empty_database)) as connection:
         assert connection.execute("SELECT to_regnamespace('app')").fetchone() == ("app",)
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "20260914_0002",
+            "20260914_0003",
         )
 
     command.downgrade(config, "base")
@@ -318,8 +323,201 @@ def test_alembic_falls_back_to_database_url(
 
     with psycopg.connect(_psycopg_url(empty_database)) as connection:
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "20260914_0002",
+            "20260914_0003",
         )
+
+
+def test_initial_league_marker_migration_backfills_an_unambiguous_owner_membership(
+    empty_database: URL,
+) -> None:
+    config = _alembic_config(empty_database)
+    command.upgrade(config, "20260914_0002")
+    account_id, league_id = uuid4(), uuid4()
+
+    with psycopg.connect(_psycopg_url(empty_database)) as connection:
+        connection.execute(
+            """
+            INSERT INTO app.account (id, supabase_user_id, email, display_name)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (account_id, uuid4(), "owner@example.com", "Owner"),
+        )
+        connection.execute(
+            "INSERT INTO app.league (id, name, season_name) VALUES (%s, %s, %s)",
+            (league_id, "Initial league", "Season 49"),
+        )
+        connection.execute(
+            "INSERT INTO app.system_role (account_id, is_system_owner) VALUES (%s, true)",
+            (account_id,),
+        )
+        connection.execute(
+            """
+            INSERT INTO app.league_membership (account_id, league_id, is_commissioner)
+            VALUES (%s, %s, true)
+            """,
+            (account_id, league_id),
+        )
+        connection.commit()
+
+    command.upgrade(config, "head")
+
+    with psycopg.connect(_psycopg_url(empty_database)) as connection:
+        assert connection.execute(
+            "SELECT league_id FROM app.system_owner_initial_league WHERE account_id = %s",
+            (account_id,),
+        ).fetchone() == (league_id,)
+
+
+def test_initial_league_marker_migration_leaves_multiple_owner_memberships_unbound(
+    empty_database: URL,
+) -> None:
+    config = _alembic_config(empty_database)
+    command.upgrade(config, "20260914_0002")
+    account_id, first_league_id, second_league_id = uuid4(), uuid4(), uuid4()
+
+    with psycopg.connect(_psycopg_url(empty_database)) as connection:
+        connection.execute(
+            """
+            INSERT INTO app.account (id, supabase_user_id, email, display_name)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (account_id, uuid4(), "owner@example.com", "Owner"),
+        )
+        connection.execute(
+            """
+            INSERT INTO app.league (id, name, season_name)
+            VALUES (%s, %s, %s), (%s, %s, %s)
+            """,
+            (
+                first_league_id,
+                "First league",
+                "Season 49",
+                second_league_id,
+                "Second league",
+                "Season 50",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO app.system_role (account_id, is_system_owner) VALUES (%s, true)",
+            (account_id,),
+        )
+        connection.execute(
+            """
+            INSERT INTO app.league_membership (account_id, league_id, is_commissioner)
+            VALUES (%s, %s, true), (%s, %s, true)
+            """,
+            (account_id, first_league_id, account_id, second_league_id),
+        )
+        connection.commit()
+
+    command.upgrade(config, "head")
+    with psycopg.connect(_psycopg_url(empty_database)) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM app.system_owner_initial_league WHERE account_id = %s",
+            (account_id,),
+        ).fetchone() == (0,)
+
+
+def test_initial_league_marker_migration_does_not_infer_later_commissioner_league(
+    empty_database: URL,
+) -> None:
+    config = _alembic_config(empty_database)
+    command.upgrade(config, "20260914_0002")
+    account_id, initial_league_id, later_league_id = uuid4(), uuid4(), uuid4()
+
+    with psycopg.connect(_psycopg_url(empty_database)) as connection:
+        connection.execute(
+            """
+            INSERT INTO app.account (id, supabase_user_id, email, display_name)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (account_id, uuid4(), "owner@example.com", "Owner"),
+        )
+        connection.execute(
+            """
+            INSERT INTO app.league (id, name, season_name)
+            VALUES (%s, %s, %s), (%s, %s, %s)
+            """,
+            (
+                initial_league_id,
+                "Initial league",
+                "Season 49",
+                later_league_id,
+                "Later league",
+                "Season 50",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO app.system_role (account_id, is_system_owner) VALUES (%s, true)",
+            (account_id,),
+        )
+        connection.execute(
+            """
+            INSERT INTO app.league_membership (account_id, league_id, is_commissioner)
+            VALUES (%s, %s, false), (%s, %s, true)
+            """,
+            (account_id, initial_league_id, account_id, later_league_id),
+        )
+        connection.commit()
+
+    command.upgrade(config, "head")
+    with psycopg.connect(_psycopg_url(empty_database)) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM app.system_owner_initial_league WHERE account_id = %s",
+            (account_id,),
+        ).fetchone() == (0,)
+
+
+@pytest.mark.parametrize(
+    ("is_commissioner", "deleted_at", "league_deleted_at"),
+    [(False, None, None), (True, datetime.now(UTC), None), (True, None, datetime.now(UTC))],
+    ids=["non_commissioner", "soft_deleted_commissioner", "soft_deleted_league"],
+)
+def test_initial_league_marker_migration_rejects_ineligible_owner_membership(
+    empty_database: URL,
+    is_commissioner: bool,
+    deleted_at: datetime | None,
+    league_deleted_at: datetime | None,
+) -> None:
+    config = _alembic_config(empty_database)
+    command.upgrade(config, "20260914_0002")
+    account_id, league_id = uuid4(), uuid4()
+
+    with psycopg.connect(_psycopg_url(empty_database)) as connection:
+        connection.execute(
+            """
+            INSERT INTO app.account (id, supabase_user_id, email, display_name)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (account_id, uuid4(), "owner@example.com", "Owner"),
+        )
+        connection.execute(
+            """
+            INSERT INTO app.league (id, name, season_name, deleted_at)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (league_id, "Initial league", "Season 49", league_deleted_at),
+        )
+        connection.execute(
+            "INSERT INTO app.system_role (account_id, is_system_owner) VALUES (%s, true)",
+            (account_id,),
+        )
+        connection.execute(
+            """
+            INSERT INTO app.league_membership
+                (account_id, league_id, is_commissioner, deleted_at)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (account_id, league_id, is_commissioner, deleted_at),
+        )
+        connection.commit()
+
+    command.upgrade(config, "head")
+    with psycopg.connect(_psycopg_url(empty_database)) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM app.system_owner_initial_league WHERE account_id = %s",
+            (account_id,),
+        ).fetchone() == (0,)
 
 
 def test_private_schema_contains_every_designed_table_and_enum(
@@ -533,10 +731,12 @@ def test_schema_has_required_indexes_types_and_least_privilege_grants(
     assert runtime_grants == {
         **{
             table_name: ["INSERT", "SELECT", "UPDATE"]
-            for table_name in EXPECTED_TABLES - {"audit_event", "system_role"}
+            for table_name in EXPECTED_TABLES
+            - {"audit_event", "system_role", "system_owner_initial_league"}
         },
         "audit_event": ["INSERT", "SELECT"],
         "system_role": ["INSERT", "SELECT"],
+        "system_owner_initial_league": ["INSERT", "SELECT"],
     }
     assert runtime_role == (
         True,
@@ -771,7 +971,10 @@ def test_runtime_login_has_effective_least_privilege_access(
                 runtime.execute(statement, parameters)
 
         runtime.execute(
-            "INSERT INTO app.system_role (account_id, is_system_owner) VALUES (%s, true)",
+            """
+            INSERT INTO app.system_role (account_id, is_system_owner)
+            VALUES (%s, true)
+            """,
             (values["account_one"],),
         )
         runtime.commit()
