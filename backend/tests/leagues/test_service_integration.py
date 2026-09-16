@@ -1,4 +1,4 @@
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import psycopg
 import pytest
@@ -100,7 +100,7 @@ def test_owner_can_create_a_league_after_authenticated_account_resolution(
         )
         assert response.status_code == 201
         assert response.json()["participation_state"] == "non_playing"
-        league_id = response.json()["id"]
+        league_id = UUID(response.json()["id"])
         league = migrated_database.execute(
             "SELECT state, roster_locked FROM app.league WHERE id = %s", (league_id,)
         ).fetchone()

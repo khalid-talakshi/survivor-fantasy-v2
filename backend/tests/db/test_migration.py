@@ -172,6 +172,7 @@ EXPECTED_ENUMS = {
 }
 
 EXPECTED_PARTIAL_INDEXES = {
+    "ix_membership_active_account_league",
     "uq_account_active_email",
     "uq_betting_participation_active_membership_set",
     "uq_castaway_active_name",
@@ -219,6 +220,10 @@ EXPECTED_CHECK_CONSTRAINTS = {
 }
 
 EXPECTED_PARTIAL_INDEX_DEFINITIONS = {
+    "ix_membership_active_account_league": (
+        "CREATE INDEX ix_membership_active_account_league ON app.league_membership "
+        "USING btree (account_id, league_id) WHERE (deleted_at IS NULL)"
+    ),
     "uq_account_active_email": (
         "CREATE UNIQUE INDEX uq_account_active_email ON app.account USING btree "
         "(lower(btrim(email))) WHERE (deleted_at IS NULL)"
@@ -293,7 +298,7 @@ def test_upgrade_and_downgrade_from_empty_database(empty_database: URL) -> None:
     with psycopg.connect(_psycopg_url(empty_database)) as connection:
         assert connection.execute("SELECT to_regnamespace('app')").fetchone() == ("app",)
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "20260914_0003",
+            "20260916_0004",
         )
 
     command.downgrade(config, "base")
@@ -323,7 +328,7 @@ def test_alembic_falls_back_to_database_url(
 
     with psycopg.connect(_psycopg_url(empty_database)) as connection:
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "20260914_0003",
+            "20260916_0004",
         )
 
 
