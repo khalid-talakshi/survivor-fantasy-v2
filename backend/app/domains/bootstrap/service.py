@@ -434,10 +434,6 @@ class BootstrapService:
                 has_history, has_matching = self.system_owners.membership_history(
                     db, account_id, request
                 )
-                if has_history and not has_matching:
-                    raise BootstrapConflictError(
-                        "existing owner memberships do not match bootstrap league values"
-                    )
             allow_completed_recovery = owner.role_exists or has_matching
             league = self.leagues.ensure(
                 db,
@@ -445,6 +441,15 @@ class BootstrapService:
                 request,
                 allow_completed_recovery=allow_completed_recovery,
             )
+            if (
+                owner.initial_league_id is None
+                and has_history
+                and not has_matching
+                and league.created
+            ):
+                raise BootstrapConflictError(
+                    "existing owner memberships do not match bootstrap league values"
+                )
             if not owner.role_exists:
                 self.system_owners.create(db, account_id)
             if owner.initial_league_id is None:
