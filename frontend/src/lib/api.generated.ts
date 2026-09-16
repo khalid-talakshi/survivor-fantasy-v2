@@ -4,49 +4,15 @@
  */
 
 export interface paths {
-    "/health/live": {
+    "/api/v1": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Live */
-        get: operations["live_health_live_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/health/ready": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Ready */
-        get: operations["ready_health_ready_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/session": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Session */
-        get: operations["session_api_v1_session_get"];
+        /** Api Root */
+        get: operations["api_root_api_v1_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -89,15 +55,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1": {
+    "/api/v1/session": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Api Root */
-        get: operations["api_root_api_v1_get"];
+        /** Session */
+        get: operations["session_api_v1_session_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/health/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Live */
+        get: operations["live_health_live_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/health/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ready */
+        get: operations["ready_health_ready_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -112,12 +112,12 @@ export interface components {
     schemas: {
         /** AccountResponse */
         AccountResponse: {
-            /** Id */
-            id: string;
-            /** Email */
-            email: string;
             /** Display Name */
             display_name: string;
+            /** Email */
+            email: string;
+            /** Id */
+            id: string;
             /** Is System Owner */
             is_system_owner: boolean;
         };
@@ -142,20 +142,20 @@ export interface components {
         LeagueResponse: {
             /** Id */
             id: string;
-            /** Name */
-            name: string;
-            /** Season Name */
-            season_name: string;
-            /** State */
-            state: string;
-            /** Roster Locked */
-            roster_locked: boolean;
             /** Is Commissioner */
             is_commissioner: boolean;
+            /** Name */
+            name: string;
             /** Participation State */
             participation_state: string;
             /** Read Only */
             read_only: boolean;
+            /** Roster Locked */
+            roster_locked: boolean;
+            /** Season Name */
+            season_name: string;
+            /** State */
+            state: string;
         };
         /** SessionResponse */
         SessionResponse: {
@@ -165,16 +165,16 @@ export interface components {
         };
         /** ValidationError */
         ValidationError: {
+            /** Context */
+            ctx?: Record<string, never>;
+            /** Input */
+            input?: unknown;
             /** Location */
             loc: (string | number)[];
             /** Message */
             msg: string;
             /** Error Type */
             type: string;
-            /** Input */
-            input?: unknown;
-            /** Context */
-            ctx?: Record<string, never>;
         };
     };
     responses: never;
@@ -185,7 +185,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    live_health_live_get: {
+    api_root_api_v1_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -200,58 +200,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HealthResponse"];
-                };
-            };
-        };
-    };
-    ready_health_ready_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HealthResponse"];
-                };
-            };
-        };
-    };
-    session_api_v1_session_get: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SessionResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": {
+                        [key: string]: string;
+                    };
                 };
             };
         };
@@ -324,7 +275,38 @@ export interface operations {
             };
         };
     };
-    api_root_api_v1_get: {
+    session_api_v1_session_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    live_health_live_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -339,9 +321,27 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    ready_health_ready_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthResponse"];
                 };
             };
         };

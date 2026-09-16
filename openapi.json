@@ -1,112 +1,223 @@
 {
-  "openapi": "3.1.0",
-  "info": {
-    "title": "Survivor Fantasy",
-    "version": "0.1.0"
-  },
-  "paths": {
-    "/health/live": {
-      "get": {
-        "tags": [
-          "health"
-        ],
-        "summary": "Live",
-        "operationId": "live_health_live_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HealthResponse"
-                }
-              }
-            }
+  "components": {
+    "schemas": {
+      "AccountResponse": {
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_system_owner": {
+            "title": "Is System Owner",
+            "type": "boolean"
           }
-        }
-      }
-    },
-    "/health/ready": {
-      "get": {
-        "tags": [
-          "health"
+        },
+        "required": [
+          "id",
+          "email",
+          "display_name",
+          "is_system_owner"
         ],
-        "summary": "Ready",
-        "operationId": "ready_health_ready_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HealthResponse"
-                }
-              }
-            }
+        "title": "AccountResponse",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
           }
-        }
-      }
-    },
-    "/api/v1/session": {
-      "get": {
-        "tags": [
-          "identity"
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
         ],
-        "summary": "Session",
-        "operationId": "session_api_v1_session_get",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "LeagueCreateRequest": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "season_name": {
+            "title": "Season Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "season_name"
+        ],
+        "title": "LeagueCreateRequest",
+        "type": "object"
+      },
+      "LeagueResponse": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_commissioner": {
+            "title": "Is Commissioner",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "participation_state": {
+            "title": "Participation State",
+            "type": "string"
+          },
+          "read_only": {
+            "title": "Read Only",
+            "type": "boolean"
+          },
+          "roster_locked": {
+            "title": "Roster Locked",
+            "type": "boolean"
+          },
+          "season_name": {
+            "title": "Season Name",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "season_name",
+          "state",
+          "roster_locked",
+          "is_commissioner",
+          "participation_state",
+          "read_only"
+        ],
+        "title": "LeagueResponse",
+        "type": "object"
+      },
+      "SessionResponse": {
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/AccountResponse"
+          },
+          "leagues": {
+            "items": {
+              "$ref": "#/components/schemas/LeagueResponse"
+            },
+            "title": "Leagues",
+            "type": "array"
+          }
+        },
+        "required": [
+          "account",
+          "leagues"
+        ],
+        "title": "SessionResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
               "anyOf": [
                 {
                   "type": "string"
                 },
                 {
-                  "type": "null"
+                  "type": "integer"
                 }
-              ],
-              "title": "Authorization"
-            }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
           }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
         ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Survivor Fantasy",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1": {
+      "get": {
+        "operationId": "api_root_api_v1_get",
         "responses": {
           "200": {
-            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SessionResponse"
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Api Root Api V1 Get",
+                  "type": "object"
                 }
               }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
+            },
+            "description": "Successful Response"
           }
-        }
+        },
+        "summary": "Api Root"
       }
     },
     "/api/v1/leagues": {
       "post": {
-        "tags": [
-          "leagues"
-        ],
-        "summary": "Create League",
         "operationId": "create_league_api_v1_leagues_post",
         "parameters": [
           {
-            "name": "authorization",
             "in": "header",
+            "name": "authorization",
             "required": false,
             "schema": {
               "anyOf": [
@@ -122,60 +233,60 @@
           }
         ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/LeagueCreateRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "201": {
-            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LeagueResponse"
                 }
               }
-            }
+            },
+            "description": "Successful Response"
           },
           "422": {
-            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
-            }
+            },
+            "description": "Validation Error"
           }
-        }
+        },
+        "summary": "Create League",
+        "tags": [
+          "leagues"
+        ]
       }
     },
     "/api/v1/leagues/{league_id}": {
       "get": {
-        "tags": [
-          "leagues"
-        ],
-        "summary": "Get League",
         "operationId": "get_league_api_v1_leagues__league_id__get",
         "parameters": [
           {
-            "name": "league_id",
             "in": "path",
+            "name": "league_id",
             "required": true,
             "schema": {
-              "type": "string",
               "format": "uuid",
-              "title": "League Id"
+              "title": "League Id",
+              "type": "string"
             }
           },
           {
-            "name": "authorization",
             "in": "header",
+            "name": "authorization",
             "required": false,
             "schema": {
               "anyOf": [
@@ -192,232 +303,121 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LeagueResponse"
                 }
               }
-            }
+            },
+            "description": "Successful Response"
           },
           "422": {
-            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
-            }
+            },
+            "description": "Validation Error"
           }
-        }
+        },
+        "summary": "Get League",
+        "tags": [
+          "leagues"
+        ]
       }
     },
-    "/api/v1": {
+    "/api/v1/session": {
       "get": {
-        "summary": "Api Root",
-        "operationId": "api_root_api_v1_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "type": "object",
-                  "title": "Response Api Root Api V1 Get"
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  "components": {
-    "schemas": {
-      "AccountResponse": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "email": {
-            "type": "string",
-            "title": "Email"
-          },
-          "display_name": {
-            "type": "string",
-            "title": "Display Name"
-          },
-          "is_system_owner": {
-            "type": "boolean",
-            "title": "Is System Owner"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "email",
-          "display_name",
-          "is_system_owner"
-        ],
-        "title": "AccountResponse"
-      },
-      "HTTPValidationError": {
-        "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "type": "array",
-            "title": "Detail"
-          }
-        },
-        "type": "object",
-        "title": "HTTPValidationError"
-      },
-      "HealthResponse": {
-        "properties": {
-          "status": {
-            "type": "string",
-            "title": "Status"
-          }
-        },
-        "type": "object",
-        "required": [
-          "status"
-        ],
-        "title": "HealthResponse"
-      },
-      "LeagueCreateRequest": {
-        "properties": {
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "season_name": {
-            "type": "string",
-            "title": "Season Name"
-          }
-        },
-        "type": "object",
-        "required": [
-          "name",
-          "season_name"
-        ],
-        "title": "LeagueCreateRequest"
-      },
-      "LeagueResponse": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "season_name": {
-            "type": "string",
-            "title": "Season Name"
-          },
-          "state": {
-            "type": "string",
-            "title": "State"
-          },
-          "roster_locked": {
-            "type": "boolean",
-            "title": "Roster Locked"
-          },
-          "is_commissioner": {
-            "type": "boolean",
-            "title": "Is Commissioner"
-          },
-          "participation_state": {
-            "type": "string",
-            "title": "Participation State"
-          },
-          "read_only": {
-            "type": "boolean",
-            "title": "Read Only"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "season_name",
-          "state",
-          "roster_locked",
-          "is_commissioner",
-          "participation_state",
-          "read_only"
-        ],
-        "title": "LeagueResponse"
-      },
-      "SessionResponse": {
-        "properties": {
-          "account": {
-            "$ref": "#/components/schemas/AccountResponse"
-          },
-          "leagues": {
-            "items": {
-              "$ref": "#/components/schemas/LeagueResponse"
-            },
-            "type": "array",
-            "title": "Leagues"
-          }
-        },
-        "type": "object",
-        "required": [
-          "account",
-          "leagues"
-        ],
-        "title": "SessionResponse"
-      },
-      "ValidationError": {
-        "properties": {
-          "loc": {
-            "items": {
+        "operationId": "session_api_v1_session_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
               "anyOf": [
                 {
                   "type": "string"
                 },
                 {
-                  "type": "integer"
+                  "type": "null"
                 }
-              ]
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
             },
-            "type": "array",
-            "title": "Location"
+            "description": "Successful Response"
           },
-          "msg": {
-            "type": "string",
-            "title": "Message"
-          },
-          "type": {
-            "type": "string",
-            "title": "Error Type"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "ctx": {
-            "type": "object",
-            "title": "Context"
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
-        "type": "object",
-        "required": [
-          "loc",
-          "msg",
-          "type"
-        ],
-        "title": "ValidationError"
+        "summary": "Session",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/health/live": {
+      "get": {
+        "operationId": "live_health_live_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Live",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "operationId": "ready_health_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ready",
+        "tags": [
+          "health"
+        ]
       }
     }
   }
