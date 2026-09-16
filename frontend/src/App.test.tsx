@@ -56,6 +56,17 @@ describe("routed application", () => {
     expect(screen.queryByText(/invitation expired/i)).not.toBeInTheDocument();
   });
 
+  it("exchanges a valid PKCE invitation code and continues to password setup", async () => {
+    const auth = createAuthController();
+    const exchangeCodeForSession = vi.spyOn(auth.client.auth, "exchangeCodeForSession").mockResolvedValue({ data: { session: {} }, error: null } as never);
+    vi.spyOn(auth, "initialize").mockResolvedValue({ status: "authenticated", session: {} as never });
+
+    await renderRoute("/auth/callback?code=valid-invitation", auth);
+
+    expect(exchangeCodeForSession).toHaveBeenCalledWith("valid-invitation");
+    expect(await screen.findByRole("heading", { name: /set your password/i })).toBeInTheDocument();
+  });
+
   it("revalidates confirmation when the password changes", async () => {
     const user = userEvent.setup();
     const auth = createAuthController();
