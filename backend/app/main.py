@@ -11,6 +11,7 @@ from sqlalchemy.exc import OperationalError
 
 from backend.app.api.health import router as health_router
 from backend.app.api.identity import router as identity_router
+from backend.app.api.leagues import router as leagues_router
 from backend.app.core.config import get_settings
 from backend.app.core.context import current_request_id, reset_request_id, set_request_id
 from backend.app.core.errors import DatabaseUnavailableError, DomainError, ValidationError
@@ -120,6 +121,7 @@ def create_app() -> FastAPI:
 
     application.include_router(health_router)
     application.include_router(identity_router)
+    application.include_router(leagues_router)
 
     frontend_dist = Path(settings.frontend_dist)
     assets_dir = frontend_dist / "assets"
@@ -146,9 +148,7 @@ def create_app() -> FastAPI:
         index_file = frontend_dist / "index.html"
         if index_file.is_file():
             return FileResponse(index_file)
-        return JSONResponse(
-            {"name": settings.app_name, "frontend": "not_built", "path": path}
-        )
+        return JSONResponse({"name": settings.app_name, "frontend": "not_built", "path": path})
 
     return application
 

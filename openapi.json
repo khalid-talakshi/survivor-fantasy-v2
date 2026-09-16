@@ -55,6 +55,24 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "LeagueCreateRequest": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "season_name": {
+            "title": "Season Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "season_name"
+        ],
+        "title": "LeagueCreateRequest",
+        "type": "object"
+      },
       "LeagueResponse": {
         "properties": {
           "id": {
@@ -72,6 +90,10 @@
           "participation_state": {
             "title": "Participation State",
             "type": "string"
+          },
+          "read_only": {
+            "title": "Read Only",
+            "type": "boolean"
           },
           "roster_locked": {
             "title": "Roster Locked",
@@ -93,7 +115,8 @@
           "state",
           "roster_locked",
           "is_commissioner",
-          "participation_state"
+          "participation_state",
+          "read_only"
         ],
         "title": "LeagueResponse",
         "type": "object"
@@ -186,6 +209,124 @@
           }
         },
         "summary": "Api Root"
+      }
+    },
+    "/api/v1/leagues": {
+      "post": {
+        "operationId": "create_league_api_v1_leagues_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeagueCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeagueResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create League",
+        "tags": [
+          "leagues"
+        ]
+      }
+    },
+    "/api/v1/leagues/{league_id}": {
+      "get": {
+        "operationId": "get_league_api_v1_leagues__league_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "league_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "League Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeagueResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get League",
+        "tags": [
+          "leagues"
+        ]
       }
     },
     "/api/v1/session": {
