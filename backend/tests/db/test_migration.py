@@ -286,7 +286,12 @@ EXPECTED_FOREIGN_KEY_RELATIONSHIPS = {
 }
 
 
-def test_upgrade_and_downgrade_from_empty_database(empty_database: URL) -> None:
+def test_upgrade_and_downgrade_from_empty_database(
+    empty_database: URL, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(
+        "DATABASE_URL", "postgresql+psycopg://postgres:postgres@localhost:1/not_the_test_database"
+    )
     config = _alembic_config(empty_database)
 
     command.upgrade(config, "head")
