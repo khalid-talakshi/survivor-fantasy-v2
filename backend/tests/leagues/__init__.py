@@ -1,0 +1,1 @@
+"""League domain tests."""

@@ -73,6 +73,7 @@ class LeagueResponse(BaseModel):
     roster_locked: bool
     is_commissioner: bool
     participation_state: str
+    read_only: bool
 
 
 class SessionResponse(BaseModel):
@@ -106,6 +107,7 @@ def session(
                 roster_locked=league.roster_locked,
                 is_commissioner=league.is_commissioner,
                 participation_state=league.participation_state,
+                read_only=league.read_only,
             )
             for league in projection.leagues
         ],

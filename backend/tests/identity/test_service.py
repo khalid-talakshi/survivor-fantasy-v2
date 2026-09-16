@@ -63,6 +63,7 @@ def test_resolves_only_active_memberships_and_refreshes_email() -> None:
                 "roster_locked": True,
                 "is_commissioner": True,
                 "participation_state": "active",
+                "read_only": False,
             }
         ],
     )

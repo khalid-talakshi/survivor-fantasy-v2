@@ -26,6 +26,7 @@ class LeagueSummary:
     roster_locked: bool
     is_commissioner: bool
     participation_state: str
+    read_only: bool
 
 
 @dataclass(frozen=True)
@@ -39,10 +40,11 @@ def normalize_email(email: str) -> str:
 
 
 class IdentityService:
-    def resolve_session(self, db: Session, identity: VerifiedIdentity) -> SessionProjection:
-        row = db.execute(
-            text(
-                """
+    def resolve_account(self, db: Session, identity: VerifiedIdentity) -> CurrentAccount:
+        row = (
+            db.execute(
+                text(
+                    """
                 SELECT account.id, account.email, account.display_name,
                        COALESCE(system_role.is_system_owner, false) AS is_system_owner
                 FROM app.account AS account
@@ -50,9 +52,12 @@ class IdentityService:
                 WHERE account.supabase_user_id = :supabase_user_id
                   AND account.deleted_at IS NULL
                 """
-            ),
-            {"supabase_user_id": identity.supabase_user_id},
-        ).mappings().one_or_none()
+                ),
+                {"supabase_user_id": identity.supabase_user_id},
+            )
+            .mappings()
+            .one_or_none()
+        )
         if row is None:
             raise AuthenticationError
 
@@ -64,12 +69,15 @@ class IdentityService:
             )
             db.commit()
 
-        account = CurrentAccount(
+        return CurrentAccount(
             id=row["id"],
             email=email,
             display_name=row["display_name"],
             is_system_owner=row["is_system_owner"],
         )
+
+    def resolve_session(self, db: Session, identity: VerifiedIdentity) -> SessionProjection:
+        account = self.resolve_account(db, identity)
         leagues = [
             LeagueSummary(**league)
             for league in db.execute(
@@ -77,7 +85,8 @@ class IdentityService:
                     """
                     SELECT league.id, league.name, league.season_name, league.state,
                            league.roster_locked, membership.is_commissioner,
-                           membership.participation_state
+                           membership.participation_state,
+                           league.state = 'completed' AS read_only
                     FROM app.league_membership AS membership
                     JOIN app.league AS league ON league.id = membership.league_id
                     WHERE membership.account_id = :account_id
@@ -88,6 +97,8 @@ class IdentityService:
                     """
                 ),
                 {"account_id": account.id},
-            ).mappings().all()
+            )
+            .mappings()
+            .all()
         ]
         return SessionProjection(account=account, leagues=leagues)
