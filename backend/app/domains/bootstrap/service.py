@@ -177,14 +177,19 @@ class SystemOwnerProvisioner:
             {"account_id": account_id, "league_id": league_id},
         )
 
-    def has_matching_membership(
+    def membership_history(
         self, db: Session, account_id: UUID, request: BootstrapRequest
-    ) -> bool:
-        return bool(
-            db.execute(
-                text(
-                    """
-                    SELECT EXISTS (
+    ) -> tuple[bool, bool]:
+        history, matching = db.execute(
+            text(
+                """
+                SELECT
+                    EXISTS (
+                        SELECT 1
+                        FROM app.league_membership
+                        WHERE account_id = :account_id
+                    ) AS has_history,
+                    EXISTS (
                         SELECT 1
                         FROM app.league_membership AS membership
                         JOIN app.league AS league
@@ -193,16 +198,16 @@ class SystemOwnerProvisioner:
                           AND league.name = :league_name
                           AND league.season_name = :season_name
                           AND league.deleted_at IS NULL
-                    )
-                    """
-                ),
-                {
-                    "account_id": account_id,
-                    "league_name": request.league_name,
-                    "season_name": request.season_name,
-                },
-            ).scalar_one()
-        )
+                    ) AS has_matching
+                """
+            ),
+            {
+                "account_id": account_id,
+                "league_name": request.league_name,
+                "season_name": request.season_name,
+            },
+        ).one()
+        return bool(history), bool(matching)
 
 
 class LeagueProvisioner:
@@ -424,9 +429,16 @@ class BootstrapService:
             )
             account_id = self.accounts.ensure(db, request)
             owner = self.system_owners.state(db, account_id)
-            allow_completed_recovery = owner.role_exists or (
-                self.system_owners.has_matching_membership(db, account_id, request)
-            )
+            has_history = has_matching = False
+            if owner.initial_league_id is None:
+                has_history, has_matching = self.system_owners.membership_history(
+                    db, account_id, request
+                )
+                if has_history and not has_matching:
+                    raise BootstrapConflictError(
+                        "existing owner memberships do not match bootstrap league values"
+                    )
+            allow_completed_recovery = owner.role_exists or has_matching
             league = self.leagues.ensure(
                 db,
                 owner.initial_league_id,

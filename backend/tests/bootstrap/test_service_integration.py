@@ -217,6 +217,45 @@ def test_bootstrap_rejects_second_existing_league_for_same_owner(
     ).fetchone() == (initial.membership_id,)
 
 
+def test_bootstrap_rejects_new_league_for_markerless_owner_with_history(
+    migrated_database: psycopg.Connection[tuple[object, ...]], empty_database: URL
+) -> None:
+    request = _request()
+    account_id, existing_league_id, membership_id = uuid4(), uuid4(), uuid4()
+    migrated_database.execute(
+        """
+        INSERT INTO app.account (id, supabase_user_id, email, display_name)
+        VALUES (%s, %s, %s, %s)
+        """,
+        (account_id, request.supabase_user_id, "owner@example.com", request.display_name),
+    )
+    migrated_database.execute(
+        """
+        INSERT INTO app.league (id, name, season_name)
+        VALUES (%s, 'Existing Pool', 'Season 48')
+        """,
+        (existing_league_id,),
+    )
+    migrated_database.execute(
+        """
+        INSERT INTO app.league_membership (id, account_id, league_id, is_commissioner)
+        VALUES (%s, %s, %s, false)
+        """,
+        (membership_id, account_id, existing_league_id),
+    )
+    migrated_database.commit()
+
+    with pytest.raises(BootstrapConflictError, match="do not match bootstrap league"):
+        _provision(empty_database, request)
+
+    assert migrated_database.execute("SELECT count(*) FROM app.account").fetchone() == (1,)
+    assert migrated_database.execute("SELECT count(*) FROM app.system_role").fetchone() == (0,)
+    assert migrated_database.execute("SELECT count(*) FROM app.league").fetchone() == (1,)
+    assert migrated_database.execute("SELECT count(*) FROM app.league_membership").fetchone() == (
+        1,
+    )
+
+
 def test_bootstrap_recovers_an_exact_completed_initial_league(
     migrated_database: psycopg.Connection[tuple[object, ...]], empty_database: URL
 ) -> None:
