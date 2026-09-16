@@ -9,7 +9,11 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-migration_database_url = os.environ.get("MIGRATION_DATABASE_URL") or os.environ.get("DATABASE_URL")
+migration_database_url = (
+    config.attributes.get("migration_database_url")
+    or os.environ.get("MIGRATION_DATABASE_URL")
+    or os.environ.get("DATABASE_URL")
+)
 if migration_database_url:
     config.set_main_option("sqlalchemy.url", migration_database_url.replace("%", "%%"))
 
